@@ -310,7 +310,7 @@ function rowToAdminUser(r) {
   return {
     id: r.id, name: r.name || "(no name yet)", phone: r.phone,
     joined: (r.created_at || "").slice(0, 10), wallet: Number(r.wallet_balance) || 0,
-    offersCompleted: 0, banned: false, banReason: "",
+    offersCompleted: 0, banned: !!r.banned, banReason: r.ban_reason || "",
   };
 }
 async function fetchUsersFromSupabase() {
@@ -327,6 +327,13 @@ async function adjustUserWalletInSupabase(userId, amount, reason, newBalance) {
   const { error: balErr } = await sb.from("users").update({ wallet_balance: newBalance }).eq("id", userId);
   if (balErr) console.error("Balance update failed:", balErr);
   return !txnErr && !balErr;
+}
+// FIX: ban/unban used to only update local React state and never reached Supabase, so the
+// user app had no way of knowing they'd been banned. This is what actually persists it.
+async function updateUserBanStatusInSupabase(userId, banned, banReason) {
+  const { error } = await sb.from("users").update({ banned, ban_reason: banned ? (banReason || "") : null }).eq("id", userId);
+  if (error) console.error("Ban status update failed:", error);
+  return !error;
 }
 
 /* ============================== Icons ============================== */
@@ -1088,12 +1095,18 @@ function UsersPage({ state, setState, toast }) {
   // TODO: POST /admin/users/:id/ban { reason } and POST /admin/users/:id/unban should trigger
   // the real transactional email (e.g. via SendGrid/Resend) to the user's registered email —
   // this demo only logs the email content to the audit trail since there's no backend yet.
-  const save = (f, prevUser) => {
+  // FIX: this now actually writes banned/ban_reason to Supabase. Previously it only touched
+  // local React state, so the ban never reached the database and had zero effect on the user.
+  const save = async (f, prevUser) => {
+    const justBanned = f.banned && !prevUser.banned;
+    const justUnbanned = !f.banned && prevUser.banned;
+    if (justBanned || justUnbanned) {
+      const ok = await updateUserBanStatusInSupabase(f.id, f.banned, f.banReason);
+      if (!ok) { toast("Couldn't update ban status — check your connection."); return; }
+    }
     setState(prev => {
       const users = prev.users.map(u => u.id===f.id ? f : u);
       let auditLog = prev.auditLog;
-      const justBanned = f.banned && !prevUser.banned;
-      const justUnbanned = !f.banned && prevUser.banned;
       if (justBanned) {
         auditLog = [{ id: uid("a"), text: `Banned ${f.name} (${maskPhone(f.phone)}). Reason: ${f.banReason || "—"}. Email sent asking them to contact support.`, at: nowStr() }, ...auditLog];
       } else if (justUnbanned) {
@@ -1101,8 +1114,8 @@ function UsersPage({ state, setState, toast }) {
       }
       return { ...prev, users, auditLog };
     });
-    if (f.banned && !prevUser.banned) toast(`User banned — notification email queued to ${f.name}.`);
-    else if (!f.banned && prevUser.banned) toast(`User unbanned — reinstatement email queued.`);
+    if (justBanned) toast(`User banned — they'll be signed out and blocked from logging in.`);
+    else if (justUnbanned) toast(`User unbanned — they can log in again.`);
     else toast("User updated.");
     setEditing(null);
   };
