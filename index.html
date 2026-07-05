@@ -336,6 +336,36 @@ async function updateUserBanStatusInSupabase(userId, banned, banReason) {
   return !error;
 }
 
+/* ====================== Supabase-backed withdrawals ======================
+   FIX: this page used to only read the local SEED_WITHDRAWALS array, so a
+   withdrawal request made from the user app (index.html) — which already
+   inserted into the "withdrawals" table — never showed up here. Now this
+   page fetches from Supabase and status changes write back to it too. */
+function fmtAdminDate(iso) {
+  try { return new Date(iso).toLocaleString("en-IN", { day: "numeric", month: "short", year: "numeric", hour: "numeric", minute: "2-digit", hour12: true }); }
+  catch (e) { return ""; }
+}
+function rowToWithdrawal(r) {
+  const methodLabel = r.method === "upi"
+    ? "UPI: " + (r.upi_id || "—")
+    : "Bank: " + (r.bank_account ? ("•••" + String(r.bank_account).slice(-4)) : "—");
+  return {
+    id: r.id, userId: r.user_id, userPhone: (r.users && r.users.phone) || "",
+    amount: Number(r.amount) || 0, method: methodLabel,
+    status: r.status || "pending", requestedAt: fmtAdminDate(r.created_at),
+  };
+}
+async function fetchWithdrawalsFromSupabase() {
+  const { data, error } = await sb.from("withdrawals").select("*, users(phone)").order("created_at", { ascending: false });
+  if (error) { console.error("Fetch withdrawals failed:", error); return null; }
+  return data.map(rowToWithdrawal);
+}
+async function updateWithdrawalStatusInSupabase(id, status) {
+  const { error } = await sb.from("withdrawals").update({ status }).eq("id", id);
+  if (error) console.error("Withdrawal status update failed:", error);
+  return !error;
+}
+
 /* ============================== Icons ============================== */
 const Icon = {
   Menu: (p) => <svg viewBox="0 0 24 24" fill="none" {...p}><path d="M4 7h16M4 12h16M4 17h10" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/></svg>,
@@ -1235,7 +1265,13 @@ function ConversionsPage({ state }) {
 function WithdrawalsPage({ state, setState, toast }) {
   const [tab, setTab] = useState("pending");
   const list = state.withdrawals.filter(w => w.status===tab);
-  const setStatus = (id, status) => { setState(prev => ({ ...prev, withdrawals: prev.withdrawals.map(w => w.id===id ? { ...w, status } : w) })); toast(`Withdrawal marked ${status}.`); };
+  // FIX: this used to only touch local state, so the change vanished on refresh
+  // and the user app (which reads real balances) never saw it. Now it writes to Supabase too.
+  const setStatus = (id, status) => {
+    setState(prev => ({ ...prev, withdrawals: prev.withdrawals.map(w => w.id===id ? { ...w, status } : w) }));
+    toast(`Withdrawal marked ${status}.`);
+    updateWithdrawalStatusInSupabase(id, status);
+  };
   return (
     <div>
       <h1 className="page-title serif">Withdrawal Management</h1>
@@ -1474,6 +1510,14 @@ function AdminApp() {
   useEffect(() => {
     fetchUsersFromSupabase().then(users => {
       if (users) setStateRaw(prev => ({ ...prev, users }));
+    });
+  }, []);
+
+  // FIX: withdrawal requests made from the user app now show up here — this used
+  // to just show the local seed list and never talked to Supabase at all.
+  useEffect(() => {
+    fetchWithdrawalsFromSupabase().then(withdrawals => {
+      if (withdrawals) setStateRaw(prev => ({ ...prev, withdrawals }));
     });
   }, []);
   const setState = (fn) => setStateRaw(fn);
