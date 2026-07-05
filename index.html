@@ -305,6 +305,30 @@ async function deleteOfferFromSupabase(id) {
   return !error;
 }
 
+/* ====================== Supabase-backed users & wallet ====================== */
+function rowToAdminUser(r) {
+  return {
+    id: r.id, name: r.name || "(no name yet)", phone: r.phone,
+    joined: (r.created_at || "").slice(0, 10), wallet: Number(r.wallet_balance) || 0,
+    offersCompleted: 0, banned: false, banReason: "",
+  };
+}
+async function fetchUsersFromSupabase() {
+  const { data, error } = await sb.from("users").select("*").order("created_at");
+  if (error) { console.error("Fetch users failed:", error); return null; }
+  return data.map(rowToAdminUser);
+}
+async function adjustUserWalletInSupabase(userId, amount, reason, newBalance) {
+  const { error: txnErr } = await sb.from("wallet_transactions").insert({
+    user_id: userId, amount: Math.abs(amount), type: amount >= 0 ? "credit" : "debit",
+    reason: reason || "Manual adjustment",
+  });
+  if (txnErr) console.error("Wallet transaction insert failed:", txnErr);
+  const { error: balErr } = await sb.from("users").update({ wallet_balance: newBalance }).eq("id", userId);
+  if (balErr) console.error("Balance update failed:", balErr);
+  return !txnErr && !balErr;
+}
+
 /* ============================== Icons ============================== */
 const Icon = {
   Menu: (p) => <svg viewBox="0 0 24 24" fill="none" {...p}><path d="M4 7h16M4 12h16M4 17h10" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/></svg>,
@@ -1001,13 +1025,16 @@ function WalletAdjustPage({ state, setState, toast }) {
   const results = query ? state.users.filter(u => u.name.toLowerCase().includes(query.toLowerCase()) || u.phone.includes(query)) : state.users;
   const selected = state.users.find(u=>u.id===userId);
 
-  const submit = () => {
+  const submit = async () => {
     if (!selected) { toast("Select a user first."); return; }
     const amt = Number(amount);
     if (!amt) { toast("Enter a non-zero amount."); return; }
+    const newBalance = Math.round((selected.wallet + amt) * 100) / 100;
+    const ok = await adjustUserWalletInSupabase(selected.id, amt, reason, newBalance);
+    if (!ok) { toast("Couldn't apply adjustment — check your connection."); return; }
     setState(prev => ({
       ...prev,
-      users: prev.users.map(u => u.id===userId ? { ...u, wallet: u.wallet + amt } : u),
+      users: prev.users.map(u => u.id===userId ? { ...u, wallet: newBalance } : u),
       conversions: [{ id: uid("c"), userPhone: selected.phone, offerId: "manual-adjustment", date: nowStr(), mode: "manual", amount: amt, status: amt>=0?"Credited":"Debited" }, ...prev.conversions],
       auditLog: [{ id: uid("a"), text: `Manually ${amt>=0?"credited":"debited"} ${fmtINR(Math.abs(amt))} ${amt>=0?"to":"from"} ${selected.name} (${maskPhone(selected.phone)}). Reason: ${reason || "—"}`, at: nowStr() }, ...prev.auditLog],
     }));
@@ -1413,6 +1440,14 @@ function AdminApp() {
   useEffect(() => {
     fetchOffersFromSupabase().then(offers => {
       if (offers) setStateRaw(prev => ({ ...prev, offers }));
+    });
+  }, []);
+
+  // Real users (created the moment someone logs into the consumer app) —
+  // replaces the local demo user list.
+  useEffect(() => {
+    fetchUsersFromSupabase().then(users => {
+      if (users) setStateRaw(prev => ({ ...prev, users }));
     });
   }, []);
   const setState = (fn) => setStateRaw(fn);
