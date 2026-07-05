@@ -1095,8 +1095,11 @@ function UsersPage({ state, setState, toast }) {
   // TODO: POST /admin/users/:id/ban { reason } and POST /admin/users/:id/unban should trigger
   // the real transactional email (e.g. via SendGrid/Resend) to the user's registered email —
   // this demo only logs the email content to the audit trail since there's no backend yet.
-  // FIX: this now actually writes banned/ban_reason to Supabase. Previously it only touched
-  // local React state, so the ban never reached the database and had zero effect on the user.
+  // FIX (1): ban/unban now actually writes banned/ban_reason to Supabase — previously it only
+  // touched local React state.
+  // FIX (2): editing the wallet field right here (in this modal) also used to be local-only —
+  // it looked applied, then reverted to the real DB value on refresh. Now it goes through the
+  // same Supabase wallet-adjustment path as the dedicated Wallet Adjustment page.
   const save = async (f, prevUser) => {
     const justBanned = f.banned && !prevUser.banned;
     const justUnbanned = !f.banned && prevUser.banned;
@@ -1104,15 +1107,25 @@ function UsersPage({ state, setState, toast }) {
       const ok = await updateUserBanStatusInSupabase(f.id, f.banned, f.banReason);
       if (!ok) { toast("Couldn't update ban status — check your connection."); return; }
     }
+    const walletDelta = Math.round((f.wallet - prevUser.wallet) * 100) / 100;
+    if (walletDelta !== 0) {
+      const ok = await adjustUserWalletInSupabase(f.id, walletDelta, "Manual adjustment (User Management)", f.wallet);
+      if (!ok) { toast("Couldn't update wallet balance — check your connection."); return; }
+    }
     setState(prev => {
       const users = prev.users.map(u => u.id===f.id ? f : u);
       let auditLog = prev.auditLog;
+      let conversions = prev.conversions;
       if (justBanned) {
         auditLog = [{ id: uid("a"), text: `Banned ${f.name} (${maskPhone(f.phone)}). Reason: ${f.banReason || "—"}. Email sent asking them to contact support.`, at: nowStr() }, ...auditLog];
       } else if (justUnbanned) {
         auditLog = [{ id: uid("a"), text: `Unbanned ${f.name} (${maskPhone(f.phone)}). Simulated reinstatement email queued.`, at: nowStr() }, ...auditLog];
       }
-      return { ...prev, users, auditLog };
+      if (walletDelta !== 0) {
+        auditLog = [{ id: uid("a"), text: `Manually ${walletDelta>=0?"credited":"debited"} ${fmtINR(Math.abs(walletDelta))} ${walletDelta>=0?"to":"from"} ${f.name} (${maskPhone(f.phone)}) via User Management.`, at: nowStr() }, ...auditLog];
+        conversions = [{ id: uid("c"), userPhone: f.phone, offerId: "manual-adjustment", date: nowStr(), mode: "manual", amount: walletDelta, status: walletDelta>=0?"Credited":"Debited" }, ...conversions];
+      }
+      return { ...prev, users, auditLog, conversions };
     });
     if (justBanned) toast(`User banned — they'll be signed out and blocked from logging in.`);
     else if (justUnbanned) toast(`User unbanned — they can log in again.`);
