@@ -353,6 +353,7 @@ function rowToWithdrawal(r) {
     id: r.id, userId: r.user_id, userPhone: "",
     amount: Number(r.amount) || 0, method: methodLabel,
     status: r.status || "pending", requestedAt: fmtAdminDate(r.created_at),
+    rejectionReason: r.rejection_reason || "",
   };
 }
 // FIX: this used to try a Supabase embedded join (`select("*, users(phone)")`), which
@@ -375,8 +376,10 @@ async function fetchWithdrawalsFromSupabase() {
   }
   return { withdrawals, errorMessage: null };
 }
-async function updateWithdrawalStatusInSupabase(id, status) {
-  const { error } = await sb.from("withdrawals").update({ status }).eq("id", id);
+async function updateWithdrawalStatusInSupabase(id, status, rejectionReason) {
+  const payload = { status };
+  if (status === "rejected") payload.rejection_reason = rejectionReason || null;
+  const { error } = await sb.from("withdrawals").update(payload).eq("id", id);
   if (error) console.error("Withdrawal status update failed:", error);
   return !error;
 }
@@ -1308,10 +1311,10 @@ function WithdrawalsPage({ state, setState, toast, loadError }) {
   const list = state.withdrawals.filter(w => w.status===tab);
   // FIX: this used to only touch local state, so the change vanished on refresh
   // and the user app (which reads real balances) never saw it. Now it writes to Supabase too.
-  const setStatus = (id, status) => {
-    setState(prev => ({ ...prev, withdrawals: prev.withdrawals.map(w => w.id===id ? { ...w, status } : w) }));
+  const setStatus = (id, status, rejectionReason) => {
+    setState(prev => ({ ...prev, withdrawals: prev.withdrawals.map(w => w.id===id ? { ...w, status, ...(status === "rejected" ? { rejectionReason } : {}) } : w) }));
     toast(`Withdrawal marked ${status}.`);
-    updateWithdrawalStatusInSupabase(id, status);
+    updateWithdrawalStatusInSupabase(id, status, rejectionReason);
   };
   return (
     <div>
@@ -1335,11 +1338,15 @@ function WithdrawalsPage({ state, setState, toast, loadError }) {
                 <td data-label="User">{maskPhone(w.userPhone)}</td>
                 <td data-label="Amount">{fmtINR(w.amount)}</td>
                 <td data-label="Method">{w.method}</td>
-                <td data-label="Requested">{w.requestedAt}</td>
+                <td data-label="Requested">{w.requestedAt}{w.status === "rejected" && w.rejectionReason && <><br /><span style={{ color: "#B91C1C", fontSize: 12 }}>Reason: {w.rejectionReason}</span></>}</td>
                 <td data-label="Actions" style={{display:"flex", gap:6, justifyContent:"flex-end"}}>
                   {w.status==="pending" && <React.Fragment>
                     <button className="btn sm" onClick={()=>setStatus(w.id,"approved")}>Approve</button>
-                    <button className="btn sm danger" onClick={()=>setStatus(w.id,"rejected")}>Reject</button>
+                    <button className="btn sm danger" onClick={()=>{
+                      const reason = window.prompt("Reject reason (user ko dikhega):");
+                      if (reason === null) return;
+                      setStatus(w.id, "rejected", reason.trim());
+                    }}>Reject</button>
                   </React.Fragment>}
                   {w.status==="approved" && <button className="btn sm" onClick={()=>setStatus(w.id,"paid")}>Mark Paid</button>}
                 </td>
