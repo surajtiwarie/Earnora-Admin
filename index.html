@@ -176,6 +176,7 @@ table.tbl tr:hover td { background: #F3F8F4; }
 .chip { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; padding: 8px 15px; border-radius: 999px; background: var(--panel); border: 1px solid transparent; color: var(--ink-soft); cursor: pointer; transition: color .15s ease; }
 .chip:hover { color: var(--ink); }
 .chip.on { background: var(--grad-brand); color: #fff; box-shadow: 0 8px 18px -10px rgba(124,58,237,.6); }
+.chip.sm { padding: 6px 12px; font-size: 11px; }
 .search-box { display: flex; align-items: center; gap: 8px; border: 1px solid var(--line); border-radius: 14px; background: var(--card); padding: 10px 13px; flex: 1; min-width: 180px; transition: border-color .15s ease; }
 .search-box:focus-within { border-color: var(--brand); }
 .search-box input { border: 0; outline: none; font: inherit; font-size: 13.5px; width: 100%; background: none; }
@@ -276,7 +277,7 @@ function offerToRow(o) {
     id: o.id, category: o.category, name: o.name, reward: Number(o.reward) || 0,
     credit_mode: o.creditMode, status: o.status, description: o.description,
     steps: o.steps, hint: o.hint, disclaimer: o.disclaimer,
-    tiers: (o.tiers || []).map(t => ({ label: t.label, reward: Number(t.reward) || 0 })),
+    tiers: (o.tiers || []).map(t => ({ label: t.label, reward: Number(t.reward) || 0, creditMode: t.creditMode || o.creditMode || "manual", requireProof: !!t.requireProof })),
     logo_url: o.logoUrl || "", screenshots: o.screenshots || [],
     tracking_link: o.trackingLink || "",
   };
@@ -341,6 +342,35 @@ async function creditManualTierInSupabase(userId, categoryId, offerId, tierIndex
     .upsert({ user_id: userId, category_id: categoryId, offer_id: offerId, tier_progress: tierIndex + 1, pending_tier: null }, { onConflict: "user_id,category_id,offer_id" });
   if (progErr) console.error("CRM tier_progress update failed:", progErr);
   return { ok: true, newBalance };
+}
+// Proof screenshots submitted by users for tiers admin flagged "Require proof" —
+// keyed by user_id so CrmPage can show a thumbnail per row.
+async function fetchTierProofsForOffer(categoryId, offerId, tierIndex) {
+  const { data, error } = await sb.from("tier_proofs").select("*")
+    .eq("category_id", categoryId).eq("offer_id", offerId).eq("tier_index", tierIndex);
+  if (error) { console.error("fetchTierProofsForOffer failed:", error); return {}; }
+  const map = {};
+  (data || []).forEach(r => { map[r.user_id] = r; });
+  return map;
+}
+// Everything needed for the fraud cross-check detail page: the click record
+// (click_id, IP, tier, postback status) plus every wallet transaction tied to
+// this user so far — admin reads the reason text to tell auto vs manual credits
+// apart and matches click_id/timestamps against the partner's own dashboard.
+async function fetchOfferAuditDetail(userId, categoryId, offerId) {
+  const [{ data: clicks }, { data: txns }, { data: userOfferRows }] = await Promise.all([
+    sb.from("offer_clicks").select("*").eq("user_id", userId).eq("category_id", categoryId).eq("offer_id", offerId).order("created_at", { ascending: false }),
+    sb.from("wallet_transactions").select("*").eq("user_id", userId).order("created_at", { ascending: false }),
+    sb.from("user_offers").select("*").eq("user_id", userId).eq("category_id", categoryId).eq("offer_id", offerId).maybeSingle(),
+  ]);
+  return { clicks: clicks || [], transactions: txns || [], userOffer: userOfferRows || null };
+}
+async function setOfferReview(userId, categoryId, offerId, status, note) {
+  const { error } = await sb.from("user_offers")
+    .upsert({ user_id: userId, category_id: categoryId, offer_id: offerId, admin_review_status: status, admin_review_note: note || null },
+      { onConflict: "user_id,category_id,offer_id" });
+  if (error) { console.error("setOfferReview failed:", error); return { ok: false }; }
+  return { ok: true };
 }
 async function adjustUserWalletInSupabase(userId, amount, reason, newBalance) {
   const { error: txnErr } = await sb.from("wallet_transactions").insert({
@@ -833,7 +863,7 @@ function OfferForm({ initial, onSave, onCancel }) {
   const [f, setF] = useState(initial || emptyOffer());
   const set = (k,v) => setF(prev => ({ ...prev, [k]: v }));
   const setTier = (i,k,v) => setF(prev => { const t = [...prev.tiers]; t[i] = { ...t[i], [k]: v }; return { ...prev, tiers: t }; });
-  const addTier = () => setF(prev => ({ ...prev, tiers: [...prev.tiers, { label: "", reward: "" }] }));
+  const addTier = () => setF(prev => ({ ...prev, tiers: [...prev.tiers, { label: "", reward: "", creditMode: prev.creditMode || "manual" }] }));
   const removeTier = (i) => setF(prev => ({ ...prev, tiers: prev.tiers.filter((_,idx) => idx !== i) }));
   // Picking a file no longer places it directly — it opens the crop sheet first so the
   // admin can reposition/zoom before it's saved onto the offer.
@@ -940,10 +970,18 @@ function OfferForm({ initial, onSave, onCancel }) {
       </div>
       <div className="field">
         <label className="field-label">Milestone / tiered rewards (optional)</label>
+        <p className="field-hint">Each milestone can have its own crediting mode — e.g. KYC auto-verified via partner postback, while Trade/Deposit stay Manual CRM-Bulk since those need a report. "Require proof" adds a screenshot upload for the user on Manual milestones — useful for a Deposit amount you can't verify any other way.</p>
         {f.tiers.map((t,i) => (
           <div className="tier-row-edit" key={i}>
             <input className="input" placeholder="Milestone label" value={t.label} onChange={e=>setTier(i,"label",e.target.value)} />
             <input className="input" style={{maxWidth:110}} type="number" placeholder="₹" value={t.reward} onChange={e=>setTier(i,"reward",e.target.value)} />
+            <div className="chip-row" style={{margin:0}}>
+              <button type="button" className={"chip sm" + (t.creditMode==="auto"?" on":"")} onClick={()=>setTier(i,"creditMode","auto")}>Auto</button>
+              <button type="button" className={"chip sm" + (t.creditMode!=="auto"?" on":"")} onClick={()=>setTier(i,"creditMode","manual")}>Manual</button>
+              {t.creditMode!=="auto" && (
+                <button type="button" className={"chip sm" + (t.requireProof?" on":"")} onClick={()=>setTier(i,"requireProof", !t.requireProof)}>Require proof</button>
+              )}
+            </div>
             <button className="icon-btn" onClick={()=>removeTier(i)}><Icon.Trash/></button>
           </div>
         ))}
@@ -1038,7 +1076,120 @@ function OffersPage({ state, setState, toast }) {
 // Filters real user_offers progress for one offer at a time (e.g. "everyone stuck
 // at Trade, KYC already done") and lets the admin manually credit a per-user amount
 // for that exact tier — for tiers like Trade/Deposit that can't be auto-verified.
-function CrmPage({ state, setState, toast }) {
+// Fraud cross-check detail: everything about how a specific user's offer got
+// credited — click_id, IP at click time, per-tier auto-vs-manual source, and
+// every wallet transaction reason/timestamp. None of this proves anything by
+// itself; it's what the admin manually matches against the partner network's
+// own dashboard (same click_id / same timestamp / same amount) before trusting
+// a completion enough to let it flow through to a withdrawal payout.
+function OfferAuditDetail({ user, offer, onClose, toast }) {
+  const [data, setData] = useState(null);
+  const [note, setNote] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchOfferAuditDetail(user.id, offer.category, offer.id).then(d => {
+      if (cancelled) return;
+      setData(d);
+      setNote((d.userOffer && d.userOffer.admin_review_note) || "");
+    });
+    return () => { cancelled = true; };
+  }, [user.id, offer.id]);
+
+  const relatedTxns = data ? data.transactions.filter(t => (t.reason || "").includes(offer.name)) : [];
+
+  const review = async (status) => {
+    setSaving(true);
+    const res = await setOfferReview(user.id, offer.category, offer.id, status, note);
+    setSaving(false);
+    if (res.ok) {
+      toast(status === "flagged" ? "Marked suspicious." : "Marked verified.");
+      setData(prev => prev ? { ...prev, userOffer: { ...(prev.userOffer || {}), admin_review_status: status, admin_review_note: note } } : prev);
+    } else {
+      toast("Couldn't save — try again.");
+    }
+  };
+
+  return (
+    <Modal open={true} onClose={onClose} title={`${user.name} — ${offer.name}`} wide>
+      {!data ? <p className="page-sub">Loading…</p> : (
+        <div>
+          <div className="field-row">
+            <div className="field"><label className="field-label">User</label><p className="page-sub" style={{margin:0}}>{user.name} · {maskPhone(user.phone)} · {user.email || "no email"}</p></div>
+            <div className="field"><label className="field-label">Current review status</label>
+              <p className="page-sub" style={{margin:0}}>
+                {data.userOffer?.admin_review_status === "flagged" ? <span className="badge orange">🚩 Flagged suspicious</span>
+                  : data.userOffer?.admin_review_status === "verified" ? <span className="badge green">✅ Verified</span>
+                  : <span className="badge grey">Not reviewed yet</span>}
+              </p>
+            </div>
+          </div>
+
+          <div className="section-head"><h2>Tier progress</h2></div>
+          <div className="tbl-wrap">
+            <table className="tbl">
+              <thead><tr><th>Milestone</th><th>Mode</th><th>Status</th></tr></thead>
+              <tbody>
+                {offer.tiers.map((t, i) => {
+                  const done = (data.userOffer?.tier_progress || 0) > i;
+                  return (
+                    <tr key={i}>
+                      <td data-label="Milestone">{t.label}</td>
+                      <td data-label="Mode"><span className={"badge " + (t.creditMode === "auto" ? "green" : "grey")}>{t.creditMode === "auto" ? "Auto (postback)" : "Manual (CRM)"}</span></td>
+                      <td data-label="Status">{done ? "✅ Credited" : "— Not yet"}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="section-head"><h2>Partner click record{data.clicks.length > 1 ? "s" : ""}</h2></div>
+          {data.clicks.length === 0 && <p className="field-hint">No click_id on file for this offer — this user's completion has no partner-redirect trail at all. Worth a closer look before crediting anything manually.</p>}
+          {data.clicks.map(c => (
+            <div className="card" key={c.click_id} style={{marginBottom:10}}>
+              <p className="page-sub" style={{margin:0}}><b>click_id:</b> <span className="mono">{c.click_id}</span></p>
+              <p className="page-sub" style={{margin:0}}><b>Redirected at:</b> {fmtAdminDate ? fmtAdminDate(c.created_at) : c.created_at} &nbsp; <b>IP:</b> {c.ip_address || "unknown"}</p>
+              <p className="page-sub" style={{margin:0}}><b>Tier index at click:</b> {c.tier_index} &nbsp; <b>Last postback status:</b> {c.last_status || "none received yet"}</p>
+              <p className="page-sub" style={{margin:0}}><b>Auto-credited tiers:</b> {(c.credited_tiers && c.credited_tiers.length) ? c.credited_tiers.join(", ") : "none"} &nbsp; <b>Reversed:</b> {(c.reversed_tiers && c.reversed_tiers.length) ? c.reversed_tiers.join(", ") : "none"}</p>
+            </div>
+          ))}
+          <p className="field-hint">Cross-check the click_id and timestamp above against this offer's conversion inside the partner's own affiliate dashboard — if it's not there, or the amount/date doesn't line up, don't approve any related withdrawal yet.</p>
+
+          <div className="section-head"><h2>Wallet transactions matching "{offer.name}"</h2></div>
+          <div className="tbl-wrap">
+            <table className="tbl">
+              <thead><tr><th>When</th><th>Type</th><th>Amount</th><th>Reason</th></tr></thead>
+              <tbody>
+                {relatedTxns.map(t => (
+                  <tr key={t.id}>
+                    <td data-label="When">{fmtAdminDate ? fmtAdminDate(t.created_at) : t.created_at}</td>
+                    <td data-label="Type"><span className={"badge " + (t.type === "credit" ? "green" : "orange")}>{t.type}</span></td>
+                    <td data-label="Amount">₹{Number(t.amount).toFixed(2)}</td>
+                    <td data-label="Reason">{t.reason}</td>
+                  </tr>
+                ))}
+                {relatedTxns.length === 0 && <tr><td colSpan="4"><div className="empty-state">No wallet transactions mention this offer yet.</div></td></tr>}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="field" style={{marginTop:14}}>
+            <label className="field-label">Review note (optional)</label>
+            <textarea className="textarea" value={note} onChange={e => setNote(e.target.value)} placeholder="e.g. checked Upstox affiliate panel, click_id matches, amount matches — cleared." />
+          </div>
+          <div className="modal-foot">
+            <button className="btn outline" disabled={saving} onClick={() => review("flagged")}>🚩 Flag suspicious</button>
+            <button className="btn" disabled={saving} onClick={() => review("verified")}>✅ Mark verified</button>
+          </div>
+        </div>
+      )}
+    </Modal>
+  );
+}
+
+function CrmPage({ state, setState, toast, admin }) {
   const tieredOffers = state.offers.filter(o => (o.tiers || []).length > 0);
   const [offerId, setOfferId] = useState(tieredOffers[0]?.id || "");
   const offer = tieredOffers.find(o => o.id === offerId);
@@ -1047,6 +1198,8 @@ function CrmPage({ state, setState, toast }) {
   const [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState({});
   const [amounts, setAmounts] = useState({});
+  const [proofs, setProofs] = useState({});
+  const [auditFor, setAuditFor] = useState(null); // { user, offer } or null
 
   const loadRows = () => {
     if (!offer) { setRows([]); return; }
@@ -1063,12 +1216,22 @@ function CrmPage({ state, setState, toast }) {
   useEffect(loadRows, [offerId, state.users]);
 
   const tierIdx = Number(tierFilter);
+
+  // Only relevant for a Manual tier that also requires proof — Auto tiers never
+  // show here anyway since they're never "stuck" waiting on CRM.
+  useEffect(() => {
+    if (!offer || tierFilter === "all") { setProofs({}); return; }
+    const tier = offer.tiers[tierIdx];
+    if (!tier || !tier.requireProof) { setProofs({}); return; }
+    fetchTierProofsForOffer(offer.category, offer.id, tierIdx).then(setProofs);
+  }, [offerId, tierFilter]);
+
   const visible = rows.filter(({ uo }) => {
     if (tierFilter === "all") return true;
     const progress = uo.tier_progress || 0;
     const pending = uo.pending_tier;
     // "Stuck at this tier" = haven't completed it yet, and either it's next up
-    // or they've submitted it for verification (pending).
+    // or (from older data) they'd submitted it for verification.
     return progress === tierIdx || pending === tierIdx;
   });
 
@@ -1085,13 +1248,13 @@ function CrmPage({ state, setState, toast }) {
       const amt = Number(amounts[r.user.id]);
       const res = await creditManualTierInSupabase(
         r.user.id, offer.category, offer.id, tierIdx, amt, r.user.wallet,
-        `${offer.name} — ${offer.tiers[tierIdx]?.label || "Tier " + (tierIdx + 1)} (manual CRM credit)`
+        `${offer.name} — ${offer.tiers[tierIdx]?.label || "Tier " + (tierIdx + 1)} (manual CRM credit by ${admin?.name || "admin"})`
       );
       if (res.ok) done++;
     }
     setState(prev => ({
       ...prev,
-      auditLog: [{ id: uid("a"), text: `CRM Bulk Credit: ${done} user(s) credited for "${offer.name} — ${offer.tiers[tierIdx]?.label}".`, at: nowStr() }, ...prev.auditLog],
+      auditLog: [{ id: uid("a"), text: `CRM Bulk Credit: ${admin?.name || "admin"} credited ${done} user(s) for "${offer.name} — ${offer.tiers[tierIdx]?.label}".`, at: nowStr() }, ...prev.auditLog],
     }));
     toast(`Credited ${done} of ${targets.length} user(s).`);
     setSelected({}); setAmounts({});
@@ -1107,6 +1270,8 @@ function CrmPage({ state, setState, toast }) {
     const mark = done ? "✅" : isPending ? "⏳" : "—";
     return <span key={i} className={"badge " + cls} style={{ marginRight: 4 }} title={label}>{mark} {label}</span>;
   };
+
+  const currentTierRequiresProof = offer && tierFilter !== "all" && offer.tiers[tierIdx] && offer.tiers[tierIdx].requireProof;
 
   return (
     <div>
@@ -1124,7 +1289,7 @@ function CrmPage({ state, setState, toast }) {
           <div className="field">
             <label className="field-label">Show users stuck at</label>
             <select className="select" value={tierFilter} onChange={e => { setTierFilter(e.target.value); setSelected({}); setAmounts({}); }}>
-              {offer.tiers.map((t, i) => <option key={i} value={i}>{t.label} (pending)</option>)}
+              {offer.tiers.map((t, i) => <option key={i} value={i}>{t.label}{t.creditMode==="auto" ? " (Auto)" : ""}</option>)}
               <option value="all">All users on this offer</option>
             </select>
           </div>
@@ -1138,7 +1303,7 @@ function CrmPage({ state, setState, toast }) {
           <div className="section-head"><h2>Matched users ({visible.length})</h2><button className="btn outline sm" onClick={toggleAll}>Select all / none</button></div>
           <div className="tbl-wrap">
             <table className="tbl">
-              <thead><tr><th></th><th>Name</th><th>Phone</th><th>Email</th><th>Progress</th><th>Wallet</th><th>Credit ₹</th></tr></thead>
+              <thead><tr><th></th><th>Name</th><th>Phone</th><th>Email</th><th>Progress</th>{currentTierRequiresProof && <th>Proof</th>}<th>Wallet</th><th>Credit ₹</th><th></th></tr></thead>
               <tbody>
                 {visible.map(({ uo, user }) => (
                   <tr key={user.id}>
@@ -1147,17 +1312,28 @@ function CrmPage({ state, setState, toast }) {
                     <td data-label="Phone">{maskPhone(user.phone)}</td>
                     <td data-label="Email">{user.email || "—"}</td>
                     <td data-label="Progress">{offer.tiers.map((_, i) => tierBadge(uo, i))}</td>
+                    {currentTierRequiresProof && (
+                      <td data-label="Proof">
+                        {proofs[user.id]
+                          ? <img src={proofs[user.id].image_data} alt="Proof" style={{ width: 40, height: 40, objectFit: "cover", borderRadius: 6, cursor: "pointer", border: "1px solid var(--line)" }}
+                              onClick={() => { const w = window.open(); if (w) w.document.write('<img src="' + proofs[user.id].image_data + '" style="max-width:100%">'); }} />
+                          : <span className="badge orange">No proof yet</span>}
+                      </td>
+                    )}
                     <td data-label="Wallet">{fmtINR(user.wallet)}</td>
                     <td data-label="Credit ₹"><input className="input sm" style={{ width: 80 }} type="number" min="0" placeholder="0" value={amounts[user.id] || ""} onChange={e => setAmount(user.id, e.target.value)} /></td>
+                    <td data-label=""><button className="btn outline sm" onClick={() => setAuditFor({ user, offer })}>Details</button></td>
                   </tr>
                 ))}
-                {visible.length === 0 && <tr><td colSpan="7"><div className="empty-state">No users match this filter.</div></td></tr>}
+                {visible.length === 0 && <tr><td colSpan="8"><div className="empty-state">No users match this filter.</div></td></tr>}
               </tbody>
             </table>
           </div>
           <button className="btn" style={{ marginTop: 14 }} onClick={bulkCredit}><Icon.Check/> Credit Selected</button>
         </React.Fragment>
       )}
+
+      {auditFor && <OfferAuditDetail user={auditFor.user} offer={auditFor.offer} onClose={() => setAuditFor(null)} toast={toast} />}
 
       <div className="section-head"><h2>Audit log</h2></div>
       <div className="card">
@@ -1689,7 +1865,7 @@ function AdminApp() {
   const pages = {
     dashboard: <Dashboard state={state} go={go} />,
     offers: <OffersPage state={state} setState={setState} toast={toast} />,
-    crm: <CrmPage state={state} setState={setState} toast={toast} />,
+    crm: <CrmPage state={state} setState={setState} toast={toast} admin={admin} />,
     wallet: <WalletAdjustPage state={state} setState={setState} toast={toast} />,
     users: <UsersPage state={state} setState={setState} toast={toast} />,
     conversions: <ConversionsPage state={state} />,
