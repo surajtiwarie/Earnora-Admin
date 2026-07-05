@@ -277,7 +277,7 @@ function offerToRow(o) {
     id: o.id, category: o.category, name: o.name, reward: Number(o.reward) || 0,
     credit_mode: o.creditMode, status: o.status, description: o.description,
     steps: o.steps, hint: o.hint, disclaimer: o.disclaimer,
-    tiers: (o.tiers || []).map(t => ({ label: t.label, reward: Number(t.reward) || 0, creditMode: t.creditMode || o.creditMode || "manual", requireProof: !!t.requireProof })),
+    tiers: (o.tiers || []).map(t => ({ label: t.label, reward: Number(t.reward) || 0, creditMode: t.creditMode || o.creditMode || "manual", requireProof: !!t.requireProof, proofCount: Math.max(1, Math.min(5, Number(t.proofCount) || 1)) })),
     logo_url: o.logoUrl || "", screenshots: o.screenshots || [],
     tracking_link: o.trackingLink || "",
   };
@@ -863,7 +863,7 @@ function OfferForm({ initial, onSave, onCancel }) {
   const [f, setF] = useState(initial || emptyOffer());
   const set = (k,v) => setF(prev => ({ ...prev, [k]: v }));
   const setTier = (i,k,v) => setF(prev => { const t = [...prev.tiers]; t[i] = { ...t[i], [k]: v }; return { ...prev, tiers: t }; });
-  const addTier = () => setF(prev => ({ ...prev, tiers: [...prev.tiers, { label: "", reward: "", creditMode: prev.creditMode || "manual" }] }));
+  const addTier = () => setF(prev => ({ ...prev, tiers: [...prev.tiers, { label: "", reward: "", creditMode: prev.creditMode || "manual", requireProof: false, proofCount: 1 }] }));
   const removeTier = (i) => setF(prev => ({ ...prev, tiers: prev.tiers.filter((_,idx) => idx !== i) }));
   // Picking a file no longer places it directly — it opens the crop sheet first so the
   // admin can reposition/zoom before it's saved onto the offer.
@@ -970,16 +970,20 @@ function OfferForm({ initial, onSave, onCancel }) {
       </div>
       <div className="field">
         <label className="field-label">Milestone / tiered rewards (optional)</label>
-        <p className="field-hint">Each milestone can have its own crediting mode — e.g. KYC auto-verified via partner postback, while Trade/Deposit stay Manual CRM-Bulk since those need a report. "Require proof" adds a screenshot upload for the user on Manual milestones — useful for a Deposit amount you can't verify any other way.</p>
+        <p className="field-hint">Each milestone can have its own crediting mode — e.g. KYC auto-verified via partner postback, while Trade/Deposit stay Manual CRM-Bulk since those need a report. "Require proof" adds a screenshot upload for the user on Manual milestones — the number box next to it sets how many screenshots (1–5) they must submit, useful for a Deposit amount you can't verify any other way.</p>
         {f.tiers.map((t,i) => (
           <div className="tier-row-edit" key={i}>
             <input className="input" placeholder="Milestone label" value={t.label} onChange={e=>setTier(i,"label",e.target.value)} />
             <input className="input" style={{maxWidth:110}} type="number" placeholder="₹" value={t.reward} onChange={e=>setTier(i,"reward",e.target.value)} />
-            <div className="chip-row" style={{margin:0}}>
+            <div className="chip-row" style={{margin:0, alignItems:"center"}}>
               <button type="button" className={"chip sm" + (t.creditMode==="auto"?" on":"")} onClick={()=>setTier(i,"creditMode","auto")}>Auto</button>
               <button type="button" className={"chip sm" + (t.creditMode!=="auto"?" on":"")} onClick={()=>setTier(i,"creditMode","manual")}>Manual</button>
               {t.creditMode!=="auto" && (
                 <button type="button" className={"chip sm" + (t.requireProof?" on":"")} onClick={()=>setTier(i,"requireProof", !t.requireProof)}>Require proof</button>
+              )}
+              {t.creditMode!=="auto" && t.requireProof && (
+                <input className="input sm" type="number" min="1" max="5" style={{width:56, padding:"6px 8px"}} title="How many screenshots the user must upload"
+                  value={t.proofCount || 1} onChange={e=>setTier(i,"proofCount", Math.max(1, Math.min(5, Number(e.target.value)||1)))} />
               )}
             </div>
             <button className="icon-btn" onClick={()=>removeTier(i)}><Icon.Trash/></button>
@@ -1314,9 +1318,12 @@ function CrmPage({ state, setState, toast, admin }) {
                     <td data-label="Progress">{offer.tiers.map((_, i) => tierBadge(uo, i))}</td>
                     {currentTierRequiresProof && (
                       <td data-label="Proof">
-                        {proofs[user.id]
-                          ? <img src={proofs[user.id].image_data} alt="Proof" style={{ width: 40, height: 40, objectFit: "cover", borderRadius: 6, cursor: "pointer", border: "1px solid var(--line)" }}
-                              onClick={() => { const w = window.open(); if (w) w.document.write('<img src="' + proofs[user.id].image_data + '" style="max-width:100%">'); }} />
+                        {(proofs[user.id] && proofs[user.id].images && proofs[user.id].images.length)
+                          ? <span style={{display:"flex", alignItems:"center", gap:6, cursor:"pointer"}}
+                              onClick={() => { const w = window.open(); if (w) w.document.write(proofs[user.id].images.map(src => '<img src="'+src+'" style="max-width:100%;display:block;margin-bottom:12px">').join('')); }}>
+                              <img src={proofs[user.id].images[0]} alt="Proof" style={{ width: 40, height: 40, objectFit: "cover", borderRadius: 6, border: "1px solid var(--line)" }} />
+                              <span className={"badge " + (proofs[user.id].images.length >= (offer.tiers[tierIdx].proofCount||1) ? "green" : "orange")}>{proofs[user.id].images.length}/{offer.tiers[tierIdx].proofCount||1}</span>
+                            </span>
                           : <span className="badge orange">No proof yet</span>}
                       </td>
                     )}
