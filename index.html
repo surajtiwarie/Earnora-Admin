@@ -350,19 +350,58 @@ function rowToWithdrawal(r) {
     ? "UPI: " + (r.upi_id || "—")
     : "Bank: " + (r.bank_account ? ("•••" + String(r.bank_account).slice(-4)) : "—");
   return {
-    id: r.id, userId: r.user_id, userPhone: (r.users && r.users.phone) || "",
+    id: r.id, userId: r.user_id, userPhone: "",
     amount: Number(r.amount) || 0, method: methodLabel,
     status: r.status || "pending", requestedAt: fmtAdminDate(r.created_at),
   };
 }
+// FIX: this used to try a Supabase embedded join (`select("*, users(phone)")`), which
+// silently returns zero rows if the foreign-key relationship isn't set up exactly right
+// in the schema. Fetching withdrawals and users separately and matching by user_id in
+// JS avoids that fragile dependency entirely.
 async function fetchWithdrawalsFromSupabase() {
-  const { data, error } = await sb.from("withdrawals").select("*, users(phone)").order("created_at", { ascending: false });
+  const { data, error } = await sb.from("withdrawals").select("*").order("created_at", { ascending: false });
   if (error) { console.error("Fetch withdrawals failed:", error); return null; }
-  return data.map(rowToWithdrawal);
+  const withdrawals = (data || []).map(rowToWithdrawal);
+  if (withdrawals.length) {
+    const { data: userRows, error: uErr } = await sb.from("users").select("id, phone");
+    if (!uErr && userRows) {
+      const phoneById = {};
+      userRows.forEach(u => { phoneById[u.id] = u.phone; });
+      withdrawals.forEach(w => { w.userPhone = phoneById[w.userId] || w.userPhone; });
+    }
+  }
+  return withdrawals;
 }
 async function updateWithdrawalStatusInSupabase(id, status) {
   const { error } = await sb.from("withdrawals").update({ status }).eq("id", id);
   if (error) console.error("Withdrawal status update failed:", error);
+  return !error;
+}
+
+/* ====================== Supabase-backed sub-admins ======================
+   FIX: sub-admins used to live only in this browser's localStorage, so a
+   sub-admin added on one device/browser was invisible everywhere else
+   (including for that sub-admin trying to log in from their own phone).
+   Now they're stored in the "admin_users" table. */
+function rowToSubadmin(r) {
+  return { id: r.id, name: r.name, phone: r.phone, perms: r.perms || {} };
+}
+async function fetchSubadminsFromSupabase() {
+  const { data, error } = await sb.from("admin_users").select("*").order("created_at");
+  if (error) { console.error("Fetch sub-admins failed:", error); return null; }
+  return data.map(rowToSubadmin);
+}
+async function upsertSubadminToSupabase(s) {
+  const { data, error } = await sb.from("admin_users").upsert({
+    id: s.id || undefined, name: s.name, phone: s.phone, perms: s.perms,
+  }).select().single();
+  if (error) { console.error("Save sub-admin failed:", error); return null; }
+  return rowToSubadmin(data);
+}
+async function deleteSubadminFromSupabase(id) {
+  const { error } = await sb.from("admin_users").delete().eq("id", id);
+  if (error) console.error("Delete sub-admin failed:", error);
   return !error;
 }
 
@@ -1396,16 +1435,23 @@ function ExportPage({ state, toast }) {
 // scoped server-side to exactly the permissions set here (never trust client-side only).
 function SubadminsPage({ state, setState, toast }) {
   const [modal, setModal] = useState(null);
-  const save = (f) => {
+  const save = async (f) => {
     if (!f.name.trim() || f.phone.length !== 10) { toast("Name and a valid 10-digit phone are required."); return; }
+    const saved = await upsertSubadminToSupabase(f);
+    if (!saved) { toast("Couldn't save sub-admin — check connection and try again."); return; }
     setState(prev => {
-      const exists = prev.subadmins.some(s=>s.id===f.id);
-      const subadmins = exists ? prev.subadmins.map(s=>s.id===f.id?f:s) : [...prev.subadmins, { ...f, id: uid("sa") }];
+      const exists = prev.subadmins.some(s => s.id === saved.id);
+      const subadmins = exists ? prev.subadmins.map(s => s.id === saved.id ? saved : s) : [...prev.subadmins, saved];
       return { ...prev, subadmins };
     });
     toast("Sub-admin saved."); setModal(null);
   };
-  const remove = (id) => { if (!confirm("Remove this sub-admin?")) return; setState(prev=>({...prev, subadmins: prev.subadmins.filter(s=>s.id!==id)})); };
+  const remove = async (id) => {
+    if (!confirm("Remove this sub-admin?")) return;
+    setState(prev => ({ ...prev, subadmins: prev.subadmins.filter(s => s.id !== id) }));
+    const ok = await deleteSubadminFromSupabase(id);
+    if (!ok) toast("Removed locally, but the server delete failed — check connection.");
+  };
   return (
     <div>
       <div className="page-title-row"><h1 className="page-title serif">Sub-admin Roles</h1><button className="btn" onClick={()=>setModal({ id:"", name:"", phone:"", perms: Object.fromEntries(MODULES.map(m=>[m.key,false])) })}><Icon.Plus/> Add sub-admin</button></div>
@@ -1518,6 +1564,14 @@ function AdminApp() {
   useEffect(() => {
     fetchWithdrawalsFromSupabase().then(withdrawals => {
       if (withdrawals) setStateRaw(prev => ({ ...prev, withdrawals }));
+    });
+  }, []);
+
+  // FIX: sub-admins now come from Supabase so they persist across devices/browsers,
+  // instead of only ever living in this one browser's localStorage.
+  useEffect(() => {
+    fetchSubadminsFromSupabase().then(subadmins => {
+      if (subadmins) setStateRaw(prev => ({ ...prev, subadmins }));
     });
   }, []);
   const setState = (fn) => setStateRaw(fn);
