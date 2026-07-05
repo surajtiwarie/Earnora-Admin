@@ -1,0 +1,1481 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Earnora Admin</title>
+<link rel="preconnect" href="https://api.fontshare.com" />
+<link rel="preconnect" href="https://cdn.fontshare.com" crossorigin />
+<link href="https://api.fontshare.com/v2/css?f[]=clash-display@400,500,600,700&f[]=satoshi@400,500,700,900&display=swap" rel="stylesheet" />
+<style>
+:root {
+  --bg: #FAF8FF; --panel: #F1ECFB; --card: #FFFFFF; --ink: #1E1533; --ink-soft: #6F6483; --line: #E8E1F5;
+  --brand: #7C3AED; --brand-deep: #5B21B6; --forest: #1B1033;
+  --orange: #D97706; --green: #16A34A; --sky: #0891B2; --pink: #DB2777; --red: #DC2626;
+  --gold: #C9932E; /* ONLY the wallet ₹ symbol. Nowhere else. */
+  --grad-brand: linear-gradient(135deg, #6D28D9 0%, #9333EA 55%, #C026D3 100%);
+  --grad-hero: radial-gradient(120% 100% at 88% -12%, rgba(236,72,255,.26), transparent 55%),
+               radial-gradient(90% 80% at -8% 112%, rgba(56,189,248,.20), transparent 52%),
+               linear-gradient(148deg, #150B29 0%, #3B1670 52%, #8B2FC9 100%);
+  --shadow-card: 0 10px 30px -18px rgba(30,21,51,.22);
+  --shadow-brand: 0 14px 30px -12px rgba(124,58,237,.5);
+  --side-w: 248px; --topbar-h: 60px;
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body, #root { min-height: 100%; }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: "Satoshi", sans-serif; -webkit-font-smoothing: antialiased; }
+a { color: inherit; text-decoration: none; }
+/* .serif kept as classname for JSX compatibility — maps to the Earnora display face */
+.serif { font-family: "Clash Display", sans-serif; font-weight: 600; letter-spacing: .002em; }
+/* Numbers use Satoshi 700 tabular — no monospace (rejected as robotic) */
+.mono { font-family: "Satoshi", sans-serif; font-weight: 700; font-variant-numeric: tabular-nums; }
+button, input, select, textarea { font-family: inherit; color: inherit; }
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background: #CFE0D4; border-radius: 8px; }
+button:focus-visible, .input:focus-visible, .select:focus-visible, .textarea:focus-visible { outline: 2px solid rgba(124,58,237,.55); outline-offset: 2px; }
+
+/* ---------- Buttons / inputs (shared language with the Earnora consumer app) ---------- */
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 12px 20px; background: var(--grad-brand); color: #fff; border: 0; border-radius: 14px; font: inherit; font-weight: 700; font-size: 13.5px; cursor: pointer; box-shadow: var(--shadow-brand); transition: filter .15s ease, transform .12s ease; white-space: nowrap; }
+.btn:hover { filter: brightness(1.06); }
+.btn:active { transform: translateY(1px); }
+.btn:disabled { background: #DCE6DE; color: #93A197; box-shadow: none; cursor: not-allowed; }
+.btn.outline { background: var(--card); border: 1px solid var(--line); color: var(--ink); box-shadow: none; }
+.btn.outline:hover { border-color: var(--brand); color: var(--brand-deep); filter: none; }
+.btn.danger { background: #FCE9E9; color: var(--red); box-shadow: none; }
+.btn.danger:hover { background: #F8DBDB; filter: none; }
+.btn.sm { padding: 8px 13px; font-size: 12.5px; border-radius: 11px; }
+.btn svg { width: 15px; height: 15px; flex-shrink: 0; }
+.icon-btn { width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--line); background: var(--card); display: grid; place-items: center; cursor: pointer; flex-shrink: 0; transition: border-color .15s ease, color .15s ease; }
+.icon-btn:hover { border-color: var(--brand); color: var(--brand-deep); }
+.sidebar-x { background: rgba(255,255,255,.08); border-color: rgba(255,255,255,.16); color: #fff; }
+.sidebar-x:hover { background: rgba(255,255,255,.16); border-color: rgba(255,255,255,.3); color: #fff; }
+.icon-btn svg { width: 15px; height: 15px; }
+.field-label { display: block; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-soft); margin-bottom: 6px; }
+.input, .select, .textarea { width: 100%; box-sizing: border-box; border: 1px solid var(--line); border-radius: 14px; background: var(--card); padding: 12px 14px; font: inherit; font-size: 14px; outline: none; transition: border-color .15s ease, box-shadow .15s ease; }
+.input:focus, .select:focus, .textarea:focus { border-color: var(--brand); box-shadow: 0 0 0 3px rgba(124,58,237,.14); }
+.textarea { min-height: 90px; resize: vertical; font-family: inherit; }
+.field { margin-bottom: 14px; }
+.field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 560px) { .field-row { grid-template-columns: 1fr; } }
+.field-hint { font-size: 11.5px; color: var(--ink-soft); margin: 5px 2px 0; }
+
+/* ---------- Login ---------- */
+.admin-login { min-height: 100vh; position: relative; overflow: hidden; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px 20px; background: var(--grad-hero); }
+.admin-login-waves { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 0; opacity: .7; pointer-events: none; }
+.admin-login-brandwrap { position: relative; z-index: 1; text-align: center; margin-bottom: 30px; color: #F7F3FF; }
+.admin-login-badge { display: inline-flex; align-items: center; gap: 6px; background: rgba(245,240,255,.1); border: 1px solid rgba(245,240,255,.3); color: #E9D5FF; font-size: 10.5px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; padding: 7px 16px; border-radius: 999px; margin-bottom: 16px; }
+.admin-login-badge svg { width: 12px; height: 12px; }
+.admin-login-mark { font-size: 31px; letter-spacing: .005em; display: flex; align-items: baseline; justify-content: center; gap: 0; text-shadow: 0 4px 20px rgba(0,0,0,.25); }
+.admin-login-mark .mark-earn { color: #FFFFFF; }
+.admin-login-mark .mark-ora { background: linear-gradient(100deg, #C026D3 15%, #F0ABFC 38%, #FDF4FF 50%, #F0ABFC 62%, #C026D3 85%); background-size: 220% 100%; -webkit-background-clip: text; background-clip: text; color: transparent; text-shadow: none; animation: oraShine 3.4s linear infinite; }
+@keyframes oraShine { 0% { background-position: 130% 0; } 100% { background-position: -110% 0; } }
+@media (prefers-reduced-motion: reduce) { .admin-login-mark .mark-ora { animation: none; } }
+.admin-login-mark-rule { width: 34px; height: 2px; border-radius: 2px; background: linear-gradient(90deg, transparent, #34D399, transparent); margin: 12px auto 0; opacity: .85; }
+.admin-login-sub { font-size: 13px; color: #D9C4FF; margin: 8px 0 0; letter-spacing: .02em; }
+.admin-login-card { position: relative; z-index: 1; width: 100%; max-width: 380px; background: var(--card); border-radius: 22px; padding: 30px 26px 28px; box-shadow: 0 40px 80px -35px rgba(20,10,40,.65); border-top: 3px solid var(--brand); }
+.admin-login-card h2 { font-size: 19px; margin: 0 0 4px; }
+.admin-login-card-sub { font-size: 12.5px; color: var(--ink-soft); margin: 0 0 22px; }
+.admin-brand { font-size: 22px; margin-bottom: 2px; }
+.admin-brand b { color: var(--brand-deep); }
+.admin-brand-tag { font-size: 12px; color: var(--ink-soft); letter-spacing: .06em; text-transform: uppercase; margin: 0 0 26px; }
+.otp-row { display: flex; gap: 8px; margin-top: 6px; }
+.otp-box { width: 100%; aspect-ratio: .9; text-align: center; border: 1px solid var(--line); border-radius: 14px; background: var(--card); font-family: "Satoshi", sans-serif; font-weight: 700; font-variant-numeric: tabular-nums; font-size: 18px; outline: none; transition: border-color .15s ease, box-shadow .15s ease; }
+.otp-box:focus { border-color: var(--brand); box-shadow: 0 0 0 3px rgba(124,58,237,.14); }
+.error-text { color: var(--red); font-size: 12.5px; margin: 8px 0 0; }
+.demo-note { font-size: 11.5px; color: var(--ink-soft); background: var(--panel); border-radius: 12px; padding: 10px 12px; margin-top: 16px; line-height: 1.5; }
+
+/* ---------- App shell ---------- */
+.admin-shell { min-height: 100vh; display: flex; }
+.sidebar { width: var(--side-w); flex-shrink: 0; background: linear-gradient(180deg, #1B1033 0%, #100822 100%); border-right: 1px solid rgba(255,255,255,.06); display: flex; flex-direction: column; position: fixed; top: 0; bottom: 0; left: 0; z-index: 40; transform: translateX(-100%); transition: transform .25s ease; }
+.sidebar.on { transform: translateX(0); }
+@media (min-width: 980px) { .sidebar { transform: translateX(0); } }
+.sidebar-head { padding: 20px 18px; border-bottom: 1px solid rgba(255,255,255,.08); display: flex; align-items: center; justify-content: space-between; }
+.sidebar-brand { font-size: 19px; letter-spacing: .005em; display: flex; align-items: baseline; }
+.sidebar-brand .mark-earn { color: #fff; }
+.sidebar-brand .mark-ora { background: var(--grad-brand); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.sidebar-nav { flex: 1; overflow-y: auto; padding: 10px; }
+.side-link { width: 100%; display: flex; align-items: center; gap: 11px; padding: 10px 12px; border-radius: 12px; border: 0; background: none; font: inherit; font-size: 13.5px; font-weight: 500; color: rgba(255,255,255,.62); cursor: pointer; text-align: left; margin-bottom: 2px; }
+.side-link svg { width: 17px; height: 17px; flex-shrink: 0; }
+.side-link:hover { background: rgba(255,255,255,.07); color: #fff; }
+.side-link.on { background: var(--grad-brand); color: #fff; font-weight: 700; box-shadow: 0 8px 18px -10px rgba(124,58,237,.6); }
+.side-group-label { font-size: 10.5px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: rgba(255,255,255,.32); padding: 14px 12px 6px; }
+.sidebar-foot { padding: 12px; border-top: 1px solid rgba(255,255,255,.08); }
+.admin-id { display: flex; align-items: center; gap: 10px; padding: 8px; margin-bottom: 6px; }
+.admin-avatar { width: 34px; height: 34px; border-radius: 50%; background: rgba(255,255,255,.1); color: #E9D5FF; display: grid; place-items: center; flex-shrink: 0; font-size: 13px; font-weight: 700; }
+.admin-name { font-size: 13px; font-weight: 700; display: block; color: #fff; }
+.admin-role { font-size: 11px; color: rgba(255,255,255,.45); display: block; }
+.sidebar-backdrop { position: fixed; inset: 0; background: rgba(27,16,51,.45); z-index: 35; display: none; }
+.sidebar-backdrop.on { display: block; }
+@media (min-width: 980px) { .sidebar-backdrop { display: none !important; } }
+
+.main-col { flex: 1; min-width: 0; }
+@media (min-width: 980px) { .main-col { margin-left: var(--side-w); } }
+.topbar { height: var(--topbar-h); display: flex; align-items: center; gap: 14px; padding: 0 18px; background: rgba(250,248,255,.92); backdrop-filter: blur(10px); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 20; }
+.topbar-title { font-size: 16px; font-weight: 700; flex: 1; }
+@media (min-width: 980px) { .hamburger { display: none; } }
+.content { max-width: 1080px; margin: 0 auto; padding: 22px 18px 60px; }
+.page-title-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 4px; flex-wrap: wrap; }
+.page-title { font-size: 23px; margin: 0; }
+.page-sub { color: var(--ink-soft); font-size: 13.5px; margin: 4px 0 20px; }
+
+/* ---------- Cards / stats ---------- */
+.stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px,1fr)); gap: 12px; margin-bottom: 24px; }
+.stat-card { position: relative; overflow: hidden; background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 16px; box-shadow: var(--shadow-card); }
+/* Colored top accent strip, like the consumer app's .stat — coded to what each stat means:
+   users = sky, pending = orange (in-progress), live offers = green (live), conversions = pink */
+.stat-card::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 3px; background: var(--grad-brand); }
+.stat-grid .stat-card:nth-child(1)::before { background: linear-gradient(90deg, #0891B2, #22D3EE); }
+.stat-grid .stat-card:nth-child(3)::before { background: linear-gradient(90deg, #D97706, #FBBF24); }
+.stat-grid .stat-card:nth-child(4)::before { background: linear-gradient(90deg, #16A34A, #4ADE80); }
+.stat-grid .stat-card:nth-child(5)::before { background: linear-gradient(90deg, #DB2777, #F472B6); }
+.stat-card.wallet-card::before { display: none; }
+.stat-card.clickable { cursor: pointer; text-align: left; width: 100%; font: inherit; margin: 0; appearance: none; -webkit-appearance: none; transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease; }
+.stat-card.clickable:hover { transform: translateY(-2px); box-shadow: 0 16px 32px -18px rgba(30,21,51,.35); border-color: var(--brand); }
+.stat-card.wallet-card.clickable:hover { border-color: transparent; box-shadow: 0 20px 36px -16px rgba(27,16,51,.6); }
+.stat-card-label { font-size: 11px; color: var(--ink-soft); text-transform: uppercase; letter-spacing: .06em; font-weight: 700; }
+.stat-card-value { font-size: 22px; margin-top: 6px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.stat-card.wallet-card { background: var(--grad-hero); border: 0; color: #F7F3FF; box-shadow: 0 18px 40px -20px rgba(27,16,51,.6); }
+.stat-card.wallet-card .stat-card-label, .stat-card.wallet-card .stat-card-value { position: relative; z-index: 1; }
+.stat-card.wallet-card .stat-card-label { color: #D9C4FF; }
+/* Gold lives here and only here — the ₹ in the wallet balance */
+.stat-card.wallet-card .rupee { color: var(--gold); text-shadow: 0 0 14px rgba(201,147,46,.35); margin-right: 1px; }
+.wallet-card-waves { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 0; opacity: .9; pointer-events: none; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 16px; box-shadow: var(--shadow-card); }
+.card + .card { margin-top: 12px; }
+.section-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 26px 0 12px; flex-wrap: wrap; }
+.section-head h2 { font-size: 16px; margin: 0; font-family: "Clash Display", sans-serif; font-weight: 600; }
+
+/* ---------- Tables (collapse to cards on mobile) ---------- */
+.tbl-wrap { background: var(--card); border: 1px solid var(--line); border-radius: 18px; overflow: hidden; box-shadow: var(--shadow-card); }
+table.tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
+table.tbl th { text-align: left; font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-soft); padding: 12px 14px; border-bottom: 1px solid var(--line); background: var(--panel); }
+table.tbl td { padding: 12px 14px; border-bottom: 1px solid var(--line); vertical-align: middle; font-variant-numeric: tabular-nums; }
+table.tbl tr:last-child td { border-bottom: 0; }
+table.tbl tr:hover td { background: #F3F8F4; }
+@media (max-width: 760px) {
+  table.tbl thead { display: none; }
+  table.tbl, table.tbl tbody, table.tbl tr, table.tbl td { display: block; width: 100%; }
+  table.tbl tr { border-bottom: 1px solid var(--line); padding: 12px 14px; }
+  table.tbl td { border: 0; padding: 4px 0; display: flex; justify-content: space-between; gap: 10px; }
+  table.tbl td[data-label]::before { content: attr(data-label); font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-soft); font-weight: 700; }
+}
+/* Status colors: green = live/credited, orange = pending/manual, red = expired/failed — always color + label together */
+.badge { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 999px; background: var(--panel); color: var(--ink-soft); white-space: nowrap; }
+.badge.green { background: #E1F7E8; color: #15803D; }
+.badge.orange { background: #FDF0DC; color: #B45309; }
+.badge.sky { background: #E0F5F7; color: #0E7490; }
+.badge.pink { background: #FCE4F0; color: #BE185D; }
+.badge.red { background: #FCE7E7; color: var(--red); }
+/* Category color-coding, same 4-color cycle as the consumer app's offer cards */
+.badge.cat-invest { background: #F1E9FD; color: #6D28D9; }
+.badge.cat-kyc { background: #E0F5F7; color: #0E7490; }
+.badge.cat-play { background: #FDF0DC; color: #B45309; }
+.badge.cat-share { background: #FCE4F0; color: #BE185D; }
+.chip-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.chip { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; padding: 8px 15px; border-radius: 999px; background: var(--panel); border: 1px solid transparent; color: var(--ink-soft); cursor: pointer; transition: color .15s ease; }
+.chip:hover { color: var(--ink); }
+.chip.on { background: var(--grad-brand); color: #fff; box-shadow: 0 8px 18px -10px rgba(124,58,237,.6); }
+.search-box { display: flex; align-items: center; gap: 8px; border: 1px solid var(--line); border-radius: 14px; background: var(--card); padding: 10px 13px; flex: 1; min-width: 180px; transition: border-color .15s ease; }
+.search-box:focus-within { border-color: var(--brand); }
+.search-box input { border: 0; outline: none; font: inherit; font-size: 13.5px; width: 100%; background: none; }
+.search-box svg { width: 15px; height: 15px; color: var(--ink-soft); flex-shrink: 0; }
+.toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
+.empty-state { text-align: center; padding: 40px 16px; color: var(--ink-soft); font-size: 13.5px; }
+.checkbox { width: 17px; height: 17px; accent-color: var(--brand); cursor: pointer; }
+
+/* ---------- Modal ---------- */
+.modal-layer { position: fixed; inset: 0; z-index: 60; display: none; align-items: flex-end; justify-content: center; }
+.modal-layer.on { display: flex; }
+.modal-backdrop { position: absolute; inset: 0; background: rgba(27,16,51,.45); }
+.modal { position: relative; background: var(--card); width: 100%; max-width: 560px; max-height: 92vh; overflow-y: auto; border-radius: 22px 22px 0 0; padding: 22px 20px 26px; }
+@media (min-width: 700px) { .modal-layer { align-items: center; } .modal { border-radius: 22px; } }
+.modal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+.modal-head h3 { font-size: 17px; margin: 0; }
+.modal-foot { display: flex; gap: 10px; justify-content: flex-end; margin-top: 18px; }
+.tier-row-edit { display: flex; gap: 8px; margin-bottom: 8px; align-items: center; }
+.tier-row-edit .input { flex: 1; }
+.logo-upload-row { display: flex; align-items: center; gap: 12px; }
+.logo-preview { width: 56px; height: 56px; border-radius: 14px; object-fit: cover; border: 1px solid var(--line); background: var(--panel); flex-shrink: 0; }
+.logo-preview-empty { width: 56px; height: 56px; border-radius: 14px; border: 1px dashed #BFD3C6; background: var(--panel); display: grid; place-items: center; color: var(--ink-soft); flex-shrink: 0; }
+.shot-grid { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+/* Portrait phone-screen-shaped thumbs, same 9:19 language as the consumer app galleries */
+.shot-thumb { position: relative; width: 64px; aspect-ratio: 9/19; border-radius: 10px; overflow: hidden; border: 1px solid var(--line); }
+.shot-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.shot-thumb button { position: absolute; top: 3px; right: 3px; width: 18px; height: 18px; border-radius: 50%; background: rgba(27,16,51,.6); border: 0; color: #fff; display: grid; place-items: center; cursor: pointer; padding: 0; }
+.shot-thumb button svg { width: 10px; height: 10px; }
+.shot-thumb .shot-edit-btn { top: auto; right: auto; bottom: 3px; left: 3px; background: rgba(124,58,237,.85); }
+.upload-btn { display: inline-flex; align-items: center; gap: 6px; }
+.logo-preview-wrap { position: relative; flex-shrink: 0; }
+.logo-edit-btn { position: absolute; bottom: -4px; right: -4px; width: 22px; height: 22px; border-radius: 50%; background: var(--brand); color: #fff; border: 2px solid #fff; display: grid; place-items: center; cursor: pointer; padding: 0; box-shadow: 0 4px 10px -4px rgba(27,16,51,.55); }
+.logo-edit-btn svg { width: 11px; height: 11px; }
+
+/* ---------- Photo crop sheet (drag to reposition + zoom slider, portal-rendered) ---------- */
+.pe-layer { position: fixed; inset: 0; z-index: 90; display: flex; align-items: flex-end; justify-content: center; }
+.pe-backdrop { position: absolute; inset: 0; background: rgba(27,16,51,.55); backdrop-filter: blur(3px); }
+.pe-sheet { position: relative; background: var(--card); width: 100%; max-width: 420px; max-height: min(88vh, 640px); border-radius: 24px 24px 0 0; box-shadow: 0 -18px 50px -22px rgba(27,16,51,.55); display: flex; flex-direction: column; overflow: hidden; }
+@media (min-width: 700px) { .pe-layer { align-items: center; } .pe-sheet { border-radius: 20px; max-height: 80vh; } }
+.pe-head { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; padding: 20px 20px 14px; }
+.pe-body { flex: 1; min-height: 0; overflow-y: auto; padding: 4px 20px 8px; }
+.pe-viewport { position: relative; margin: 0 auto; overflow: hidden; background: var(--forest); touch-action: none; cursor: grab; box-shadow: 0 0 0 4px #fff, 0 0 0 5px var(--line), 0 18px 40px -22px rgba(27,16,51,.5); }
+.pe-viewport:active { cursor: grabbing; }
+.pe-viewport.square { width: min(240px, 58vw); border-radius: 20px; }
+.pe-viewport.portrait { width: min(170px, 42vw); border-radius: 18px; }
+.pe-viewport img { position: absolute; left: 50%; top: 50%; max-width: none; user-select: none; -webkit-user-drag: none; pointer-events: none; will-change: transform; }
+.pe-hint { text-align: center; font-size: 11.5px; color: var(--ink-soft); margin: 12px 0 0; }
+.pe-zoom-row { display: flex; align-items: center; gap: 12px; margin: 14px 6px 4px; }
+.pe-zoom-mark { font-size: 18px; font-weight: 700; color: var(--ink-soft); line-height: 1; flex-shrink: 0; width: 16px; text-align: center; }
+.pe-zoom { flex: 1; accent-color: var(--brand); }
+.pe-actions { flex-shrink: 0; display: flex; gap: 10px; padding: 14px 20px calc(18px + env(safe-area-inset-bottom)); border-top: 1px solid var(--line); background: var(--card); }
+.pe-actions .btn { flex: 1; }
+.perm-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 13.5px; }
+.perm-row:last-child { border-bottom: 0; }
+.toggle { position: relative; width: 40px; height: 22px; border-radius: 999px; background: #D7E3DA; border: 0; cursor: pointer; flex-shrink: 0; transition: background .15s ease; }
+.toggle.on { background: var(--brand); }
+.toggle::after { content: ""; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%; background: #fff; transition: transform .15s ease; }
+.toggle.on::after { transform: translateX(18px); }
+
+/* ---------- Toast ---------- */
+.toast { position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%); background: var(--forest); color: #fff; padding: 12px 20px; border-radius: 999px; font-size: 13px; font-weight: 500; z-index: 80; opacity: 0; pointer-events: none; transition: opacity .2s ease, transform .2s ease; box-shadow: 0 14px 30px -12px rgba(27,16,51,.5); }
+.toast.on { opacity: 1; transform: translateX(-50%) translateY(-6px); }
+
+.audit-item { display: flex; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 12.5px; color: var(--ink-soft); }
+.audit-item:last-child { border-bottom: 0; }
+.audit-item b { color: var(--ink); }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<noscript>Earnora Admin needs JavaScript enabled.</noscript>
+
+<!-- SECURITY NOTE: This admin panel is intentionally a separate file/app from the
+     user-facing Earnora site (index.html). It shares no routes, no
+     bundle, and no client state with the public app, so the public front-end can
+     never expose or lead to admin functionality. Ship this on a separate path or
+     subdomain (e.g. admin.earnora.app) and keep it out of any public sitemap. -->
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useRef, useMemo } = React;
+const { createPortal } = ReactDOM;
+
+/* ====================== Supabase connection ====================== */
+const SUPABASE_URL = "https://qduunthrfkigwzjdcqru.supabase.co";
+const SUPABASE_KEY = "sb_publishable_iYdWE9UrB7n6U3zqq4scEg_SFStnS2m";
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+// Converts between the admin's in-memory offer shape (camelCase, tiers as
+// array of {label,reward}) and the Supabase "offers" table row (snake_case).
+function offerToRow(o) {
+  return {
+    id: o.id, category: o.category, name: o.name, reward: Number(o.reward) || 0,
+    credit_mode: o.creditMode, status: o.status, description: o.description,
+    steps: o.steps, hint: o.hint, disclaimer: o.disclaimer,
+    tiers: (o.tiers || []).map(t => ({ label: t.label, reward: Number(t.reward) || 0 })),
+    logo_url: o.logoUrl || "", screenshots: o.screenshots || [],
+    tracking_link: o.trackingLink || "",
+  };
+}
+function rowToOffer(r) {
+  return {
+    id: r.id, category: r.category, name: r.name, reward: r.reward,
+    creditMode: r.credit_mode, status: r.status, description: r.description,
+    steps: r.steps, hint: r.hint, disclaimer: r.disclaimer,
+    tiers: r.tiers || [], logoUrl: r.logo_url || "", screenshots: r.screenshots || [],
+    trackingLink: r.tracking_link || "",
+  };
+}
+async function fetchOffersFromSupabase() {
+  const { data, error } = await sb.from("offers").select("*").order("created_at");
+  if (error) { console.error("Fetch offers failed:", error); return null; }
+  return data.map(rowToOffer);
+}
+async function upsertOfferToSupabase(offer) {
+  const { error } = await sb.from("offers").upsert(offerToRow(offer));
+  if (error) console.error("Save offer failed:", error);
+  return !error;
+}
+async function deleteOfferFromSupabase(id) {
+  const { error } = await sb.from("offers").delete().eq("id", id);
+  if (error) console.error("Delete offer failed:", error);
+  return !error;
+}
+
+/* ============================== Icons ============================== */
+const Icon = {
+  Menu: (p) => <svg viewBox="0 0 24 24" fill="none" {...p}><path d="M4 7h16M4 12h16M4 17h10" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/></svg>,
+  Close: (p) => <svg viewBox="0 0 24 24" fill="none" {...p}><path d="M6 6l12 12M18 6 6 18" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"/></svg>,
+  Grid: (p) => <svg viewBox="0 0 22 22" fill="none" {...p}><rect x="3.5" y="3.5" width="6" height="6" rx="1.3" stroke="currentColor" strokeWidth="1.5"/><rect x="12.5" y="3.5" width="6" height="6" rx="1.3" stroke="currentColor" strokeWidth="1.5"/><rect x="3.5" y="12.5" width="6" height="6" rx="1.3" stroke="currentColor" strokeWidth="1.5"/><rect x="12.5" y="12.5" width="6" height="6" rx="1.3" stroke="currentColor" strokeWidth="1.5"/></svg>,
+  Gift: (p) => <svg viewBox="0 0 22 22" fill="none" {...p}><rect x="3.5" y="8.5" width="15" height="10" rx="1.6" stroke="currentColor" strokeWidth="1.5"/><path d="M3.5 12h15" stroke="currentColor" strokeWidth="1.5"/><path d="M11 8.5v10" stroke="currentColor" strokeWidth="1.5"/><path d="M11 8.5c0-2 -1.6-3.4-3.2-3.4S5 6 5.6 7.5C6.1 8.7 8 8.5 11 8.5Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round"/><path d="M11 8.5c0-2 1.6-3.4 3.2-3.4S17 6 16.4 7.5C15.9 8.7 14 8.5 11 8.5Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round"/></svg>,
+  Upload: (p) => <svg viewBox="0 0 20 20" fill="none" {...p}><path d="M10 13V4M6.5 7.5 10 4l3.5 3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/><path d="M3.5 14v2a1.5 1.5 0 0 0 1.5 1.5h10a1.5 1.5 0 0 0 1.5-1.5v-2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>,
+  Wallet: (p) => <svg viewBox="0 0 20 20" fill="none" {...p}><rect x="2.5" y="5.5" width="15" height="10.5" rx="2.2" stroke="currentColor" strokeWidth="1.5"/><path d="M12.5 10.7h3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/></svg>,
+  User: (p) => <svg viewBox="0 0 22 22" fill="none" {...p}><circle cx="11" cy="7.6" r="3.4" stroke="currentColor" strokeWidth="1.5"/><path d="M4.5 18.2c1.1-3 3.6-4.5 6.5-4.5s5.4 1.5 6.5 4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>,
+  List: (p) => <svg viewBox="0 0 20 20" fill="none" {...p}><path d="M7 5.5h9.5M7 10h9.5M7 14.5h9.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/><circle cx="3.4" cy="5.5" r="1" fill="currentColor"/><circle cx="3.4" cy="10" r="1" fill="currentColor"/><circle cx="3.4" cy="14.5" r="1" fill="currentColor"/></svg>,
+  CreditOut: (p) => <svg viewBox="0 0 20 20" fill="none" {...p}><circle cx="10" cy="10" r="7.5" stroke="currentColor" strokeWidth="1.4"/><path d="M10 13.5v-7M7 9.5l3-3 3 3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>,
+  Doc: (p) => <svg viewBox="0 0 20 20" fill="none" {...p}><path d="M6 3.5h6l3 3v10H6v-13Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round"/><path d="M8.2 9h4.2M8.2 12h4.2" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg>,
+  Download: (p) => <svg viewBox="0 0 20 20" fill="none" {...p}><path d="M10 3v9M6.5 8.5 10 12l3.5-3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/><path d="M3.5 14.5v1.5A1.5 1.5 0 0 0 5 17.5h10a1.5 1.5 0 0 0 1.5-1.5v-1.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>,
+  Shield: (p) => <svg viewBox="0 0 20 20" fill="none" {...p}><path d="M10 2.2 16 4.5v4.6c0 4-2.6 6.7-6 8.2-3.4-1.5-6-4.2-6-8.2V4.5L10 2.2Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round"/><path d="m7.4 9.8 1.9 1.9 3.4-3.6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>,
+  LogOut: (p) => <svg viewBox="0 0 20 20" fill="none" {...p}><path d="M8 3.5H5A1.5 1.5 0 0 0 3.5 5v10A1.5 1.5 0 0 0 5 16.5h3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/><path d="M13 13.5 16.5 10 13 6.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/><path d="M7.5 10h9" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg>,
+  Search: (p) => <svg viewBox="0 0 20 20" fill="none" {...p}><circle cx="8.8" cy="8.8" r="5.3" stroke="currentColor" strokeWidth="1.5"/><path d="m16 16-3.5-3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>,
+  Plus: (p) => <svg viewBox="0 0 20 20" fill="none" {...p}><path d="M10 4v12M4 10h12" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"/></svg>,
+  Pencil: (p) => <svg viewBox="0 0 16 16" fill="none" {...p}><path d="M10.6 2.6 13.4 5.4 5.6 13.2 2.4 13.6l.4-3.2 7.8-7.8Z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/></svg>,
+  Trash: (p) => <svg viewBox="0 0 20 20" fill="none" {...p}><path d="M4 6.5h12M8 6.5V4.8a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v1.7" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/><path d="M5.5 6.5 6.2 16a1.3 1.3 0 0 0 1.3 1.2h5a1.3 1.3 0 0 0 1.3-1.2l.7-9.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>,
+  Check: (p) => <svg viewBox="0 0 16 16" fill="none" {...p}><path d="M3.5 8.3 6.4 11.2 12.5 4.8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/></svg>,
+  X: (p) => <svg viewBox="0 0 16 16" fill="none" {...p}><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/></svg>,
+  Back: (p) => <svg viewBox="0 0 20 20" fill="none" {...p}><path d="M16 10H5M9 5.5 4.5 10 9 14.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/></svg>,
+};
+
+/* ============================== Demo seed data ============================== */
+const CATEGORY_META = {
+  invest: { title: "Invest & Earn" },
+  kyc: { title: "KYC & Earn" },
+  play: { title: "Play & Earn" },
+  share: { title: "Share & Earn" },
+};
+
+const SEED_OFFERS = [
+  { id: "upstox", category: "invest", name: "Upstox", reward: 260, creditMode: "auto", status: "live",
+    description: "Open a free demat account with Upstox and make your first deposit to unlock your reward.",
+    steps: "Tap Claim and finish the security check.\nSign up on Upstox using the same mobile number.\nComplete KYC and deposit ₹500 or more.",
+    hint: "Use PAN + Aadhaar-linked mobile for faster KYC.", disclaimer: "New users only. Credited within 7–10 working days.",
+    tiers: [{ label: "Complete KYC", reward: 60 }, { label: "Deposit ₹500", reward: 200 }] },
+  { id: "angelone", category: "invest", name: "Angel One", reward: 240, creditMode: "manual", status: "live",
+    description: "Register, complete KYC and place your first trade to earn your full reward.",
+    steps: "Tap Claim and finish the security check.\nRegister with your mobile number.\nComplete KYC and place one trade.",
+    hint: "Keep a bank statement handy.", disclaimer: "Reward applies once per user.",
+    tiers: [{ label: "Complete KYC", reward: 100 }, { label: "Place first trade", reward: 140 }] },
+  { id: "groww", category: "kyc", name: "Groww", reward: 90, creditMode: "auto", status: "live",
+    description: "Complete KYC on Groww to open your account and unlock your reward.",
+    steps: "Tap Claim and finish the security check.\nSign up and verify mobile number.\nComplete KYC with PAN and a selfie.",
+    hint: "Keep PAN photo ready.", disclaimer: "First-time Groww accounts only.",
+    tiers: [{ label: "Complete KYC", reward: 90 }] },
+  { id: "navi-upi", category: "kyc", name: "Navi UPI", reward: 70, creditMode: "manual", status: "paused",
+    description: "Set up Navi UPI and complete your first transaction to earn your reward.",
+    steps: "Tap Claim and finish the security check.\nInstall Navi and set up UPI.\nSend or receive one payment of ₹10+.",
+    hint: "Link your most-used bank account.", disclaimer: "One reward per user.",
+    tiers: [{ label: "Complete first transaction", reward: 70 }] },
+  { id: "jewels-atlantis", category: "play", name: "Jewels Atlantis", reward: 8555, creditMode: "manual", status: "live",
+    description: "Launch Jewels Atlantis through Earnora and level up to unlock every milestone reward.",
+    steps: "Tap Claim and finish the security check.\nLaunch the game from Earnora.\nReach the levels below.",
+    hint: "95% of players reach level 6 within a day.", disclaimer: "New players only. Rewards are time-sensitive.",
+    tiers: [{ label: "Reach level 3", reward: 0.1 }, { label: "Reach level 6", reward: 5 }, { label: "7-day streak", reward: 195 }, { label: "Reach level 10", reward: 585 }] },
+  { id: "share-generic", category: "share", name: "Any Offer — Share Link", reward: 0, creditMode: "manual", status: "live",
+    description: "Every live offer automatically gets a trackable Share & Earn link. Unlike Invest/KYC/Play, this can be reused by multiple different people.",
+    steps: "User generates a link for any offer from the Share & Earn tab.\nEach new person who converts through that link pays out the offer's reward.",
+    hint: "Reward per conversion matches the source offer's reward amount.", disclaimer: "Not single-use — the same link can convert multiple different users.",
+    tiers: [] },
+];
+
+const SEED_USERS = [
+  { id: "u1", name: "Suraj Tiwari", phone: "9876500041", joined: "2026-05-02", wallet: 18240.5, offersCompleted: 4, banned: false, banReason: "" },
+  { id: "u2", name: "Ankit Verma", phone: "9123400229", joined: "2026-05-14", wallet: 640, offersCompleted: 2, banned: false, banReason: "" },
+  { id: "u3", name: "Priya Singh", phone: "8899000114", joined: "2026-06-01", wallet: 1520, offersCompleted: 3, banned: false, banReason: "" },
+  { id: "u4", name: "Rahul Yadav", phone: "9988700512", joined: "2026-06-20", wallet: 0, offersCompleted: 0, banned: false, banReason: "" },
+];
+
+const SEED_CONVERSIONS = [
+  { id: "c1", userPhone: "9876500041", offerId: "upstox", date: "2026-07-02 18:41", mode: "auto", amount: 260, status: "Credited" },
+  { id: "c2", userPhone: "9123400229", offerId: "angelone", date: "2026-06-29 09:15", mode: "manual", amount: 240, status: "Credited" },
+  { id: "c3", userPhone: "8899000114", offerId: "groww", date: "2026-06-27 15:30", mode: "auto", amount: 90, status: "Credited" },
+];
+
+const SEED_WITHDRAWALS = [
+  { id: "w1", userPhone: "9876500041", amount: 5000, method: "UPI: suraj@okhdfc", status: "pending", requestedAt: "2026-07-03 11:20" },
+  { id: "w2", userPhone: "8899000114", amount: 1200, method: "Bank: HDFC •••4432", status: "paid", requestedAt: "2026-06-30 08:05" },
+];
+
+const SEED_CONTENT = {
+  privacy: "Earnora Privacy Policy — placeholder text. Edit here and publish; no redeploy needed once backend is connected.",
+  terms: "Earnora Terms & Conditions — placeholder text. Edit here and publish.",
+  faqs: [
+    { q: "How fast is my reward credited?", a: "Auto-Instant offers credit immediately after partner confirmation. Manual CRM offers are credited after the next bulk-credit cycle." },
+    { q: "Can I use the same offer twice?", a: "No — Invest/KYC/Play offers are single-use per account. Share & Earn links can be reused by different people." },
+  ],
+};
+
+const SEED_SUBADMINS = [
+  { id: "sa1", name: "Ops - Neha", phone: "9012345678", perms: { offers: true, crm: true, wallet: false, users: true, conversions: true, withdrawals: false, content: false, export: false } },
+];
+
+const MODULES = [
+  { key: "offers", label: "Offers" }, { key: "crm", label: "CRM Bulk Credit" }, { key: "wallet", label: "Wallet Adjustment" },
+  { key: "users", label: "Users" }, { key: "conversions", label: "Conversion Log" }, { key: "withdrawals", label: "Withdrawals" },
+  { key: "content", label: "Content" }, { key: "export", label: "Data Export" },
+];
+
+const SUPER_ADMIN_PHONE = "9170274400";
+const ALL_PERMS_TRUE = Object.fromEntries(MODULES.map(m => [m.key, true]));
+const STORAGE_KEY = "earnora_admin_state_v1";
+function loadState() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch (e) {}
+  return { offers: SEED_OFFERS, users: SEED_USERS, conversions: SEED_CONVERSIONS, withdrawals: SEED_WITHDRAWALS, content: SEED_CONTENT, subadmins: SEED_SUBADMINS, auditLog: [] };
+}
+
+function fmtINR(n) { return "₹" + Number(n || 0).toLocaleString("en-IN", { maximumFractionDigits: 2 }); }
+function maskPhone(p) { return p ? "+91 " + p.slice(0,2) + "•••••" + p.slice(-3) : ""; }
+function nowStr() { const d = new Date(); return d.toISOString().slice(0,16).replace("T"," "); }
+function uid(prefix) { return prefix + "_" + Math.random().toString(36).slice(2,8); }
+
+/* ============================== Toast ============================== */
+function useToast() {
+  const [msg, setMsg] = useState(""); const [on, setOn] = useState(false); const t = useRef(null);
+  const show = (m) => { setMsg(m); setOn(true); clearTimeout(t.current); t.current = setTimeout(() => setOn(false), 2400); };
+  const node = <div className={"toast" + (on ? " on" : "")}>{msg}</div>;
+  return [show, node];
+}
+
+/* ============================== Modal shell ============================== */
+function Modal({ open, onClose, title, children, footer, wide }) {
+  if (!open) return null;
+  return (
+    <div className="modal-layer on">
+      <div className="modal-backdrop" onClick={onClose}></div>
+      <div className="modal" style={wide ? { maxWidth: 720 } : undefined}>
+        <div className="modal-head"><h3 className="serif">{title}</h3><button className="icon-btn" onClick={onClose}><Icon.Close /></button></div>
+        {children}
+        {footer && <div className="modal-foot">{footer}</div>}
+      </div>
+    </div>
+  );
+}
+
+/* ============================== Login (separate admin identity) ============================== */
+// TODO: POST /admin/auth/otp/request { phone } — validated against the admin_users table only,
+// completely separate from the public /auth/otp/request used by regular users.
+// TODO: POST /admin/auth/otp/verify { phone, code } → admin session token + role/permissions.
+function AdminLogin({ onLogin, subadmins }) {
+  const [phone, setPhone] = useState("");
+  const [step, setStep] = useState("phone");
+  const [otp, setOtp] = useState(["","","",""]);
+  const [error, setError] = useState("");
+  const [matched, setMatched] = useState(null); // { type: 'super' } or { type: 'sub', record }
+  const refs = [useRef(), useRef(), useRef(), useRef()];
+
+  const sendOtp = () => {
+    const clean = phone.replace(/\D/g,"");
+    if (clean.length !== 10) { setError("Enter a valid 10-digit admin mobile number."); return; }
+    // Access is restricted: only the super admin number, or a phone number that has
+    // already been added as a sub-admin (see Sub-admin Roles), may proceed past this point.
+    if (clean === SUPER_ADMIN_PHONE) { setMatched({ type: "super" }); setError(""); setStep("otp"); return; }
+    const sub = (subadmins || []).find(s => s.phone === clean);
+    if (sub) { setMatched({ type: "sub", record: sub }); setError(""); setStep("otp"); return; }
+    setError("This number is not authorized for admin access.");
+  };
+  const verify = (codeOverride) => {
+    const code = codeOverride || otp.join("");
+    if (code.length !== 4) { setError("Enter the 4-digit code."); return; }
+    // Demo mode: any 4-digit code passes since there is no backend yet — the real
+    // authorization check already happened in sendOtp() against the allowed numbers.
+    if (matched.type === "super") onLogin({ name: "Suraj Tiwari", phone, role: "Super Admin", perms: ALL_PERMS_TRUE });
+    else onLogin({ name: matched.record.name, phone, role: "Sub Admin", perms: matched.record.perms });
+  };
+  const submittedRef = useRef(false);
+  useEffect(() => {
+    if (step !== "otp") { submittedRef.current = false; return; }
+    const code = otp.join("");
+    if (code.length === 4 && !otp.includes("") && !submittedRef.current) {
+      submittedRef.current = true;
+      verify(code);
+    }
+  }, [otp, step]);
+  const setDigit = (i, v) => {
+    const next = [...otp]; next[i] = v; setOtp(next);
+    if (v && refs[i+1]) refs[i+1].current.focus();
+  };
+  return (
+    <div className="admin-login">
+      <svg className="admin-login-waves" viewBox="0 0 400 220" preserveAspectRatio="none" fill="none">
+        <defs>
+          <linearGradient id="eaWaveFadeL" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0%" stopColor="#FFFFFF" stopOpacity="0" /><stop offset="45%" stopColor="#FFFFFF" stopOpacity="0.35" /><stop offset="100%" stopColor="#FFFFFF" stopOpacity="0" />
+          </linearGradient>
+          <linearGradient id="eaWaveLimeL" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0%" stopColor="#F0ABFC" stopOpacity="0" /><stop offset="50%" stopColor="#F0ABFC" stopOpacity="0.5" /><stop offset="100%" stopColor="#F0ABFC" stopOpacity="0" />
+          </linearGradient>
+        </defs>
+        <path d="M-20 40 C 50 10, 110 70, 180 40 C 250 12, 310 72, 380 42 C 410 30, 425 38, 440 34" stroke="url(#eaWaveFadeL)" strokeWidth="1.4" />
+        <path d="M-20 85 C 60 50, 120 120, 190 82 C 260 48, 320 122, 390 88 C 415 74, 428 82, 440 78" stroke="url(#eaWaveLimeL)" strokeWidth="1.3" />
+        <path d="M-20 132 C 55 168, 120 100, 190 136 C 255 168, 320 100, 385 134 C 410 148, 425 138, 440 142" stroke="url(#eaWaveFadeL)" strokeWidth="1.1" />
+        <path d="M-20 178 C 60 148, 130 208, 200 176 C 265 148, 325 210, 390 180 C 412 168, 428 176, 440 172" stroke="url(#eaWaveFadeL)" strokeWidth="1" />
+        <circle cx="130" cy="40" r="2" fill="#FFFFFF" opacity="0.35" /><circle cx="280" cy="82" r="1.8" fill="#F0ABFC" opacity="0.5" /><circle cx="350" cy="134" r="1.8" fill="#FFFFFF" opacity="0.3" />
+      </svg>
+      <div className="admin-login-brandwrap">
+        <span className="admin-login-badge"><Icon.Shield/> Restricted Access</span>
+        <div className="admin-login-mark serif"><span className="mark-earn">Earn</span><span className="mark-ora">ora</span> <span style={{fontSize:17, opacity:.85}}>Admin</span></div>
+        <div className="admin-login-mark-rule"></div>
+        <p className="admin-login-sub">Work hard. Earn smarter.</p>
+      </div>
+      <div className="admin-login-card">
+        <h2 className="serif">{step === "phone" ? "Admin sign in" : "Verify it's you"}</h2>
+        <p className="admin-login-card-sub">{step === "phone" ? "Only authorized admin numbers can access this panel." : "One-time code confirms this device."}</p>
+        {step === "phone" ? (
+          <React.Fragment>
+            <label className="field-label">Admin mobile number</label>
+            <input className="input" inputMode="numeric" maxLength="10" placeholder="98765 43210" value={phone}
+              onChange={e => setPhone(e.target.value.replace(/\D/g,"").slice(0,10))}
+              onKeyDown={e => { if (e.key === "Enter") sendOtp(); }} />
+            {error && <p className="error-text">{error}</p>}
+            <button className="btn block" style={{width:"100%", marginTop:14}} onClick={sendOtp}>Send OTP</button>
+            <p className="demo-note">Demo mode — no backend connected yet. Any 4-digit code will work on the next screen. Wire this to Supabase phone-auth (admin_users table) when the backend is connected.</p>
+          </React.Fragment>
+        ) : (
+          <React.Fragment>
+            <button className="btn outline sm" style={{marginBottom:14}} onClick={() => setStep("phone")}><Icon.Back/> Back</button>
+            <label className="field-label">Enter OTP sent to +91 {phone}</label>
+            <div className="otp-row">
+              {otp.map((v,i) => (
+                <input key={i} ref={refs[i]} className="otp-box" inputMode="numeric" maxLength="1" value={v}
+                  onChange={e => setDigit(i, e.target.value.replace(/\D/g,""))} />
+              ))}
+            </div>
+            {error && <p className="error-text">{error}</p>}
+            <button className="btn" style={{width:"100%", marginTop:16}} onClick={verify}>Verify & Enter</button>
+          </React.Fragment>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ============================== Dashboard ============================== */
+function Dashboard({ state, go }) {
+  const totalUsers = state.users.length;
+  const totalWallet = state.users.reduce((s,u) => s + u.wallet, 0);
+  const pendingW = state.withdrawals.filter(w => w.status === "pending").length;
+  const liveOffers = state.offers.filter(o => o.status === "live").length;
+  const todayConv = state.conversions.length;
+  return (
+    <div>
+      <div className="page-title-row"><h1 className="page-title serif">Dashboard</h1></div>
+      <p className="page-sub">Quick snapshot across the platform — tap a card to jump straight to that section.</p>
+      <div className="stat-grid">
+        <button className="stat-card clickable" onClick={()=>go("users")}><div className="stat-card-label">Total Users</div><div className="stat-card-value">{totalUsers}</div></button>
+        <button className="stat-card wallet-card clickable" onClick={()=>go("wallet")}>
+          <svg className="wallet-card-waves" viewBox="0 0 400 160" preserveAspectRatio="none" fill="none">
+            <defs>
+              <linearGradient id="eaWaveFadeA" x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0%" stopColor="#FFFFFF" stopOpacity="0" /><stop offset="45%" stopColor="#FFFFFF" stopOpacity="0.4" /><stop offset="100%" stopColor="#FFFFFF" stopOpacity="0" />
+              </linearGradient>
+              <linearGradient id="eaWaveLimeA" x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0%" stopColor="#F0ABFC" stopOpacity="0" /><stop offset="50%" stopColor="#F0ABFC" stopOpacity="0.55" /><stop offset="100%" stopColor="#F0ABFC" stopOpacity="0" />
+              </linearGradient>
+            </defs>
+            <path d="M-20 30 C 40 5, 90 55, 150 32 C 210 10, 260 60, 330 34 C 370 20, 400 30, 420 25" stroke="url(#eaWaveFadeA)" strokeWidth="1.4" />
+            <path d="M-20 62 C 50 35, 100 88, 170 60 C 230 36, 280 90, 340 64 C 380 48, 405 58, 420 54" stroke="url(#eaWaveFadeA)" strokeWidth="1.2" />
+            <path d="M-20 98 C 45 128, 105 74, 175 100 C 235 122, 285 72, 345 98 C 380 112, 400 102, 420 106" stroke="url(#eaWaveLimeA)" strokeWidth="1.3" />
+            <path d="M-20 132 C 60 108, 120 156, 190 130 C 250 108, 300 158, 360 132 C 390 120, 405 128, 420 124" stroke="url(#eaWaveFadeA)" strokeWidth="1" />
+            <circle cx="120" cy="32" r="2" fill="#FFFFFF" opacity="0.35" /><circle cx="260" cy="60" r="1.6" fill="#F0ABFC" opacity="0.45" /><circle cx="340" cy="98" r="1.8" fill="#FFFFFF" opacity="0.3" />
+          </svg>
+          <div className="stat-card-label">Wallet Balance (all)</div><div className="stat-card-value"><span className="rupee">₹</span>{Number(totalWallet||0).toLocaleString("en-IN",{maximumFractionDigits:2})}</div>
+        </button>
+        <button className="stat-card clickable" onClick={()=>go("withdrawals")}><div className="stat-card-label">Pending Withdrawals</div><div className="stat-card-value">{pendingW}</div></button>
+        <button className="stat-card clickable" onClick={()=>go("offers")}><div className="stat-card-label">Live Offers</div><div className="stat-card-value">{liveOffers}</div></button>
+        <button className="stat-card clickable" onClick={()=>go("conversions")}><div className="stat-card-label">Logged Conversions</div><div className="stat-card-value">{todayConv}</div></button>
+      </div>
+      <div className="section-head"><h2>Recent Conversions</h2></div>
+      <div className="tbl-wrap">
+        <table className="tbl">
+          <thead><tr><th>User</th><th>Offer</th><th>Date</th><th>Mode</th><th>Amount</th><th>Status</th></tr></thead>
+          <tbody>
+            {state.conversions.slice(0,6).map(c => (
+              <tr key={c.id} style={{cursor:"pointer"}} onClick={()=>go("conversions")}>
+                <td data-label="User">{maskPhone(c.userPhone)}</td>
+                <td data-label="Offer">{c.offerId}</td>
+                <td data-label="Date">{c.date}</td>
+                <td data-label="Mode"><span className={"badge " + (c.mode==="auto"?"green":"orange")}>{c.mode === "auto" ? "Auto-Instant" : "Manual CRM"}</span></td>
+                <td data-label="Amount">{fmtINR(c.amount)}</td>
+                <td data-label="Status"><span className="badge green">{c.status}</span></td>
+              </tr>
+            ))}
+            {state.conversions.length === 0 && <tr><td colSpan="6"><div className="empty-state">No conversions logged yet.</div></td></tr>}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+/* ============================== Offer Management ============================== */
+// TODO: POST /admin/offers (create), PATCH /admin/offers/:id (edit), DELETE /admin/offers/:id
+function emptyOffer() { return { id: "", category: "invest", name: "", reward: "", creditMode: "auto", status: "live", description: "", steps: "", hint: "", disclaimer: "", tiers: [], logoUrl: "", screenshots: [], trackingLink: "" }; }
+function readFileAsDataUrl(file) { return new Promise((resolve, reject) => { const r = new FileReader(); r.onload = () => resolve(r.result); r.onerror = reject; r.readAsDataURL(file); }); }
+
+/* ============================== Photo crop sheet ============================== */
+// Drag-to-reposition + zoom-slider cropper, portal-rendered to document.body — same
+// pattern as the consumer app's profile photo editor. Reused here for offer logos
+// (square) and offer screenshots (portrait 9:19), so admins can compose the crop
+// themselves instead of the picked file being placed as-is.
+function PhotoCropSheet({ src, aspect, shape, title, outW, outH, onCancel, onSave }) {
+  const imgRef = useRef(null);
+  const vpRef = useRef(null);
+  const [zoom, setZoom] = useState(1);
+  const [dim, setDim] = useState(null);
+  const [off, setOff] = useState({ x: 0, y: 0 });
+  const drag = useRef(null);
+  const [maxH, setMaxH] = useState(null);
+
+  // Some Android WebViews report 100vh from the full device screen rather than the
+  // actually-visible viewport, which can push the footer buttons off-screen.
+  // Measuring window.innerHeight directly sidesteps that.
+  useEffect(() => {
+    const measure = () => setMaxH(Math.round(window.innerHeight * 0.9));
+    measure();
+    window.addEventListener("resize", measure);
+    window.addEventListener("orientationchange", measure);
+    return () => { window.removeEventListener("resize", measure); window.removeEventListener("orientationchange", measure); };
+  }, []);
+
+  const clampOff = (o, z, d) => {
+    if (!d) return o;
+    const w = d.nw * d.scaleBase * z, h = d.nh * d.scaleBase * z;
+    const mx = Math.max(0, (w - d.vpW) / 2), my = Math.max(0, (h - d.vpH) / 2);
+    return { x: Math.min(mx, Math.max(-mx, o.x)), y: Math.min(my, Math.max(-my, o.y)) };
+  };
+  const onImgLoad = () => {
+    const img = imgRef.current, vp = vpRef.current;
+    if (!img || !vp) return;
+    const vpW = vp.clientWidth, vpH = vp.clientHeight;
+    const scaleBase = Math.max(vpW / img.naturalWidth, vpH / img.naturalHeight);
+    setDim({ nw: img.naturalWidth, nh: img.naturalHeight, scaleBase, vpW, vpH });
+    setOff({ x: 0, y: 0 }); setZoom(1);
+  };
+  const onPointerDown = (e) => { drag.current = { sx: e.clientX, sy: e.clientY, ox: off.x, oy: off.y }; e.currentTarget.setPointerCapture(e.pointerId); };
+  const onPointerMove = (e) => { if (!drag.current) return; const d = drag.current; setOff(clampOff({ x: d.ox + (e.clientX - d.sx), y: d.oy + (e.clientY - d.sy) }, zoom, dim)); };
+  const onPointerUp = () => { drag.current = null; };
+  const onZoom = (z) => { setZoom(z); setOff(o => clampOff(o, z, dim)); };
+
+  const save = () => {
+    const img = imgRef.current; if (!img || !dim) return;
+    const canvas = document.createElement("canvas");
+    canvas.width = outW; canvas.height = outH;
+    const ctx = canvas.getContext("2d");
+    const scale = dim.scaleBase * zoom;
+    const viewImgW = dim.vpW / scale, viewImgH = dim.vpH / scale;
+    const sx = (dim.nw - viewImgW) / 2 - off.x / scale;
+    const sy = (dim.nh - viewImgH) / 2 - off.y / scale;
+    ctx.drawImage(img, sx, sy, viewImgW, viewImgH, 0, 0, outW, outH);
+    onSave(canvas.toDataURL("image/jpeg", 0.92));
+  };
+
+  const imgStyle = dim
+    ? { width: dim.nw * dim.scaleBase * zoom + "px", transform: "translate(calc(-50% + " + off.x + "px), calc(-50% + " + off.y + "px))" }
+    : { opacity: 0 };
+
+  return createPortal(
+    <div className="pe-layer" role="dialog" aria-modal="true" aria-label={title}>
+      <div className="pe-backdrop" onClick={onCancel}></div>
+      <div className="pe-sheet" style={maxH ? { maxHeight: maxH + "px" } : undefined}>
+        <div className="pe-head">
+          <h2 className="serif" style={{ fontSize: 18, margin: 0 }}>{title}</h2>
+          <button className="icon-btn" aria-label="Close" onClick={onCancel}><Icon.Close/></button>
+        </div>
+        <div className="pe-body">
+          <div className={"pe-viewport " + shape} ref={vpRef} style={{ aspectRatio: aspect }}
+            onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}>
+            <img ref={imgRef} src={src} alt="" style={imgStyle} onLoad={onImgLoad} draggable={false} />
+          </div>
+          <p className="pe-hint">Drag to reposition, use the slider to zoom</p>
+          <div className="pe-zoom-row">
+            <span className="pe-zoom-mark">−</span>
+            <input className="pe-zoom" type="range" min="1" max="3" step="0.01" value={zoom} onChange={e => onZoom(parseFloat(e.target.value))} aria-label="Zoom" />
+            <span className="pe-zoom-mark">+</span>
+          </div>
+        </div>
+        <div className="pe-actions">
+          <button className="btn outline" onClick={onCancel}>Cancel</button>
+          <button className="btn" onClick={save}>Use photo</button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+function OfferForm({ initial, onSave, onCancel }) {
+  const [f, setF] = useState(initial || emptyOffer());
+  const set = (k,v) => setF(prev => ({ ...prev, [k]: v }));
+  const setTier = (i,k,v) => setF(prev => { const t = [...prev.tiers]; t[i] = { ...t[i], [k]: v }; return { ...prev, tiers: t }; });
+  const addTier = () => setF(prev => ({ ...prev, tiers: [...prev.tiers, { label: "", reward: "" }] }));
+  const removeTier = (i) => setF(prev => ({ ...prev, tiers: prev.tiers.filter((_,idx) => idx !== i) }));
+  // Picking a file no longer places it directly — it opens the crop sheet first so the
+  // admin can reposition/zoom before it's saved onto the offer.
+  const [logoCropSrc, setLogoCropSrc] = useState(null);
+  const [shotQueue, setShotQueue] = useState([]); // screenshots waiting to be cropped, in order
+  const [shotEditIndex, setShotEditIndex] = useState(null); // index of an already-saved shot being re-cropped
+  const shotBatchTotalRef = useRef(0);
+
+  const onLogoPick = async (e) => { const file = e.target.files[0]; if (!file) return; const dataUrl = await readFileAsDataUrl(file); setLogoCropSrc(dataUrl); e.target.value = ""; };
+  const onShotsPick = async (e) => {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    const dataUrls = await Promise.all(files.map(readFileAsDataUrl));
+    setShotQueue(prev => {
+      shotBatchTotalRef.current = prev.length === 0 ? dataUrls.length : shotBatchTotalRef.current + dataUrls.length;
+      return [...prev, ...dataUrls];
+    });
+    e.target.value = "";
+  };
+  const removeShot = (i) => setF(prev => ({ ...prev, screenshots: prev.screenshots.filter((_,idx) => idx !== i) }));
+
+  return (
+    <div>
+      <div className="field">
+        <label className="field-label">App logo</label>
+        <div className="logo-upload-row">
+          <div className="logo-preview-wrap">
+            {f.logoUrl ? <img className="logo-preview" src={f.logoUrl} alt="" /> : <div className="logo-preview-empty"><Icon.Gift width={20} height={20} /></div>}
+            {f.logoUrl && <button type="button" className="logo-edit-btn" aria-label="Adjust crop" onClick={()=>setLogoCropSrc(f.logoUrl)}><Icon.Pencil/></button>}
+          </div>
+          <label className="btn outline sm upload-btn" style={{cursor:"pointer"}}>
+            <Icon.Upload/> {f.logoUrl ? "Replace logo" : "Upload logo"}
+            <input type="file" accept="image/*" style={{display:"none"}} onChange={onLogoPick} />
+          </label>
+          {f.logoUrl && <button className="btn danger sm" onClick={()=>set("logoUrl","")}>Remove</button>}
+        </div>
+        {logoCropSrc && (
+          <PhotoCropSheet src={logoCropSrc} aspect={1} shape="square" title="Adjust logo" outW={320} outH={320}
+            onCancel={()=>setLogoCropSrc(null)}
+            onSave={(d)=>{ set("logoUrl", d); setLogoCropSrc(null); }} />
+        )}
+        <p className="field-hint">Shows next to the offer name on the live site. This is the same power the live app will use once the backend is connected.</p>
+      </div>
+      <div className="field">
+        <label className="field-label">Screenshots / promo images</label>
+        <label className="btn outline sm upload-btn" style={{cursor:"pointer", width:"fit-content"}}>
+          <Icon.Upload/> Upload images
+          <input type="file" accept="image/*" multiple style={{display:"none"}} onChange={onShotsPick} />
+        </label>
+        {!!(f.screenshots && f.screenshots.length) && (
+          <div className="shot-grid">
+            {f.screenshots.map((s,i) => (
+              <div className="shot-thumb" key={i}>
+                <img src={s} alt="" />
+                <button type="button" className="shot-edit-btn" aria-label="Adjust crop" onClick={()=>setShotEditIndex(i)}><Icon.Pencil/></button>
+                <button onClick={()=>removeShot(i)}><Icon.X/></button>
+              </div>
+            ))}
+          </div>
+        )}
+        <p className="field-hint">Shown as a scrollable gallery on the offer page, like a Play Store preview strip.</p>
+        {shotEditIndex !== null ? (
+          <PhotoCropSheet key={"edit-"+shotEditIndex} src={f.screenshots[shotEditIndex]} aspect={9/19} shape="portrait" title="Adjust screenshot" outW={342} outH={722}
+            onCancel={()=>setShotEditIndex(null)}
+            onSave={(d)=>{ setF(prev => { const s=[...prev.screenshots]; s[shotEditIndex]=d; return {...prev, screenshots:s}; }); setShotEditIndex(null); }} />
+        ) : shotQueue.length > 0 ? (
+          <PhotoCropSheet key={"new-"+shotQueue.length} src={shotQueue[0]} aspect={9/19} shape="portrait"
+            title={shotBatchTotalRef.current > 1 ? `Adjust screenshot (${shotBatchTotalRef.current - shotQueue.length + 1} of ${shotBatchTotalRef.current})` : "Adjust screenshot"}
+            outW={342} outH={722}
+            onCancel={()=>setShotQueue(prev => prev.slice(1))}
+            onSave={(d)=>{ setF(prev => ({ ...prev, screenshots: [...(prev.screenshots||[]), d] })); setShotQueue(prev => prev.slice(1)); }} />
+        ) : null}
+      </div>
+      <div className="field-row">
+        <div className="field"><label className="field-label">Offer name</label><input className="input" value={f.name} onChange={e=>set("name", e.target.value)} placeholder="e.g. Upstox" /></div>
+        <div className="field"><label className="field-label">Category</label>
+          <select className="select" value={f.category} onChange={e=>set("category", e.target.value)}>
+            <option value="invest">Invest & Earn</option><option value="kyc">KYC & Earn</option><option value="play">Play & Earn</option><option value="share">Share & Earn</option>
+          </select>
+        </div>
+      </div>
+      <div className="field-row">
+        <div className="field"><label className="field-label">Reward amount (₹)</label><input className="input" type="number" value={f.reward} onChange={e=>set("reward", e.target.value)} /></div>
+        <div className="field"><label className="field-label">Status</label>
+          <select className="select" value={f.status} onChange={e=>set("status", e.target.value)}>
+            <option value="live">Live</option><option value="paused">Paused</option>
+          </select>
+        </div>
+      </div>
+      <div className="field">
+        <label className="field-label">Crediting mode</label>
+        <div className="chip-row">
+          <button type="button" className={"chip" + (f.creditMode==="auto"?" on":"")} onClick={()=>set("creditMode","auto")}>Auto-Instant</button>
+          <button type="button" className={"chip" + (f.creditMode==="manual"?" on":"")} onClick={()=>set("creditMode","manual")}>Manual CRM-Bulk</button>
+        </div>
+        <p className="field-hint">Auto-Instant = credited the moment the partner's webhook confirms conversion. Manual CRM-Bulk = credited later via the CRM Bulk Credit tool once a report arrives.</p>
+      </div>
+      <div className="field"><label className="field-label">Tracking link (partner affiliate URL — user is redirected here after the security check)</label><input className="input" placeholder="https://partner.example.com/offer?ref=" value={f.trackingLink} onChange={e=>set("trackingLink", e.target.value)} /></div>
+      <div className="field"><label className="field-label">Description</label><textarea className="textarea" value={f.description} onChange={e=>set("description", e.target.value)} /></div>
+      <div className="field"><label className="field-label">Steps (one per line)</label><textarea className="textarea" value={f.steps} onChange={e=>set("steps", e.target.value)} /></div>
+      <div className="field-row">
+        <div className="field"><label className="field-label">Hint</label><input className="input" value={f.hint} onChange={e=>set("hint", e.target.value)} /></div>
+        <div className="field"><label className="field-label">Disclaimer</label><input className="input" value={f.disclaimer} onChange={e=>set("disclaimer", e.target.value)} /></div>
+      </div>
+      <div className="field">
+        <label className="field-label">Milestone / tiered rewards (optional)</label>
+        {f.tiers.map((t,i) => (
+          <div className="tier-row-edit" key={i}>
+            <input className="input" placeholder="Milestone label" value={t.label} onChange={e=>setTier(i,"label",e.target.value)} />
+            <input className="input" style={{maxWidth:110}} type="number" placeholder="₹" value={t.reward} onChange={e=>setTier(i,"reward",e.target.value)} />
+            <button className="icon-btn" onClick={()=>removeTier(i)}><Icon.Trash/></button>
+          </div>
+        ))}
+        <button className="btn outline sm" onClick={addTier}><Icon.Plus/> Add milestone</button>
+      </div>
+      <div className="modal-foot">
+        <button className="btn outline" onClick={onCancel}>Cancel</button>
+        <button className="btn" onClick={() => onSave(f)}>Save offer</button>
+      </div>
+    </div>
+  );
+}
+
+function OffersPage({ state, setState, toast }) {
+  const [filter, setFilter] = useState("all");
+  const [modal, setModal] = useState(null); // { mode: 'new'|'edit', offer }
+
+  const saveOffer = async (f) => {
+    if (!f.name.trim()) { toast("Offer name is required."); return; }
+    const withId = f.id ? f : { ...f, id: f.name.toLowerCase().replace(/[^a-z0-9]+/g,"-") + "-" + Math.random().toString(36).slice(2,5) };
+    const ok = await upsertOfferToSupabase(withId);
+    if (!ok) { toast("Couldn't save offer — check your connection."); return; }
+    setState(prev => {
+      const exists = prev.offers.some(o => o.id === withId.id);
+      const offers = exists ? prev.offers.map(o => o.id === withId.id ? withId : o) : [...prev.offers, withId];
+      return { ...prev, offers };
+    });
+    toast(f.id ? "Offer updated." : "New offer created.");
+    setModal(null);
+  };
+  const deleteOffer = async (id) => {
+    if (!confirm("Delete this offer?")) return;
+    const ok = await deleteOfferFromSupabase(id);
+    if (!ok) { toast("Couldn't delete offer — check your connection."); return; }
+    setState(prev => ({ ...prev, offers: prev.offers.filter(o=>o.id!==id) }));
+    toast("Offer deleted.");
+  };
+  const toggleStatus = async (id) => {
+    const offer = state.offers.find(o => o.id === id);
+    if (!offer) return;
+    const updated = { ...offer, status: offer.status === "live" ? "paused" : "live" };
+    const ok = await upsertOfferToSupabase(updated);
+    if (!ok) { toast("Couldn't update status — check your connection."); return; }
+    setState(prev => ({ ...prev, offers: prev.offers.map(o => o.id===id ? updated : o) }));
+  };
+
+  const list = state.offers.filter(o => filter === "all" || o.category === filter);
+
+  return (
+    <div>
+      <div className="page-title-row">
+        <h1 className="page-title serif">Offer Management</h1>
+        <button className="btn" onClick={() => setModal({ mode: "new" })}><Icon.Plus/> New offer</button>
+      </div>
+      <p className="page-sub">Create, edit and pause offers across all categories. Every offer must have a crediting mode.</p>
+      <div className="chip-row" style={{marginBottom:16}}>
+        {["all","invest","kyc","play","share"].map(c => (
+          <button key={c} className={"chip" + (filter===c?" on":"")} onClick={()=>setFilter(c)}>{c==="all"?"All":CATEGORY_META[c].title}</button>
+        ))}
+      </div>
+      <div className="tbl-wrap">
+        <table className="tbl">
+          <thead><tr><th>Offer</th><th>Category</th><th>Reward</th><th>Crediting mode</th><th>Status</th><th></th></tr></thead>
+          <tbody>
+            {list.map(o => (
+              <tr key={o.id}>
+                <td data-label="Offer">{o.name}</td>
+                <td data-label="Category"><span className={"badge cat-"+o.category}>{CATEGORY_META[o.category].title}</span></td>
+                <td data-label="Reward">{fmtINR(o.reward)}</td>
+                <td data-label="Crediting mode"><span className={"badge " + (o.creditMode==="auto"?"green":"orange")}>{o.creditMode==="auto"?"Auto-Instant":"Manual CRM-Bulk"}</span></td>
+                <td data-label="Status">
+                  <button className={"badge" + (o.status==="live" ? " green" : "")} style={{cursor:"pointer", border:0}} onClick={()=>toggleStatus(o.id)}>{o.status==="live"?"Live":"Paused"}</button>
+                </td>
+                <td data-label="Actions" style={{display:"flex", gap:6, justifyContent:"flex-end"}}>
+                  <button className="icon-btn" onClick={()=>setModal({ mode:"edit", offer:o })}><Icon.Pencil/></button>
+                  <button className="icon-btn" onClick={()=>deleteOffer(o.id)}><Icon.Trash/></button>
+                </td>
+              </tr>
+            ))}
+            {list.length===0 && <tr><td colSpan="6"><div className="empty-state">No offers in this category yet.</div></td></tr>}
+          </tbody>
+        </table>
+      </div>
+      <Modal open={!!modal} onClose={()=>setModal(null)} title={modal?.mode==="edit" ? "Edit offer" : "New offer"}>
+        {modal && <OfferForm initial={modal.offer} onSave={saveOffer} onCancel={()=>setModal(null)} />}
+      </Modal>
+    </div>
+  );
+}
+
+/* ============================== CRM Report & Bulk Credit ============================== */
+// TODO: POST /admin/crm/upload { offerId, rows } — persist raw report; POST /admin/crm/bulk-credit { offerId, userIds }
+function CrmPage({ state, setState, toast }) {
+  const manualOffers = state.offers.filter(o => o.creditMode === "manual");
+  const [offerId, setOfferId] = useState(manualOffers[0]?.id || "");
+  const [raw, setRaw] = useState("");
+  const [matched, setMatched] = useState([]);
+  const [selected, setSelected] = useState({});
+
+  const parseReport = () => {
+    const lines = raw.split("\n").map(l=>l.trim()).filter(Boolean);
+    const rows = lines.map(l => l.split(",")[0].replace(/\D/g,"").slice(-10));
+    const found = state.users.filter(u => rows.includes(u.phone));
+    setMatched(found);
+    const sel = {}; found.forEach(u => sel[u.id] = true); setSelected(sel);
+    if (found.length === 0) toast("No matching users found for the pasted numbers.");
+  };
+  const toggle = (id) => setSelected(prev => ({ ...prev, [id]: !prev[id] }));
+  const toggleAll = () => { const allOn = matched.every(u=>selected[u.id]); const sel={}; matched.forEach(u=>sel[u.id]=!allOn); setSelected(sel); };
+
+  const bulkCredit = () => {
+    const offer = state.offers.find(o=>o.id===offerId);
+    if (!offer) return;
+    const targets = matched.filter(u => selected[u.id]);
+    if (targets.length === 0) { toast("Select at least one user."); return; }
+    setState(prev => {
+      const users = prev.users.map(u => targets.some(t=>t.id===u.id) ? { ...u, wallet: u.wallet + Number(offer.reward), offersCompleted: u.offersCompleted+1 } : u);
+      const conversions = [
+        ...targets.map(t => ({ id: uid("c"), userPhone: t.phone, offerId: offer.id, date: nowStr(), mode: "manual", amount: offer.reward, status: "Credited" })),
+        ...prev.conversions,
+      ];
+      const auditLog = [{ id: uid("a"), text: `Bulk-credited ${targets.length} user(s) ${fmtINR(offer.reward)} each for "${offer.name}" — total ${fmtINR(offer.reward*targets.length)}.`, at: nowStr() }, ...prev.auditLog];
+      return { ...prev, users, conversions, auditLog };
+    });
+    toast(`Credited ${targets.length} user(s) for ${offer.name}.`);
+    setMatched([]); setSelected({}); setRaw("");
+  };
+
+  return (
+    <div>
+      <h1 className="page-title serif">CRM Report & Bulk Credit</h1>
+      <p className="page-sub">For Manual CRM-Bulk offers only — paste a CRM export (one phone number per line, CSV rows also work), match it to Earnora users, then approve and credit in one action.</p>
+      <div className="card">
+        <div className="field">
+          <label className="field-label">Offer (Manual CRM-Bulk only)</label>
+          <select className="select" value={offerId} onChange={e=>setOfferId(e.target.value)}>
+            {manualOffers.map(o => <option key={o.id} value={o.id}>{o.name} — {fmtINR(o.reward)}</option>)}
+          </select>
+          {manualOffers.length === 0 && <p className="field-hint">No offers are set to Manual CRM-Bulk yet — set one in Offer Management first.</p>}
+        </div>
+        <div className="field">
+          <label className="field-label">Paste CRM report (phone per line, or phone,status,amount CSV)</label>
+          <textarea className="textarea" style={{minHeight:120}} value={raw} onChange={e=>setRaw(e.target.value)} placeholder={"9876500041\n9123400229,KYC Success,240"} />
+        </div>
+        <button className="btn" onClick={parseReport} disabled={!offerId || !raw.trim()}><Icon.Upload/> Match users</button>
+      </div>
+
+      {matched.length > 0 && (
+        <React.Fragment>
+          <div className="section-head"><h2>Matched users ({matched.length})</h2><button className="btn outline sm" onClick={toggleAll}>Select all / none</button></div>
+          <div className="tbl-wrap">
+            <table className="tbl">
+              <thead><tr><th></th><th>Name</th><th>Phone</th><th>Current wallet</th></tr></thead>
+              <tbody>
+                {matched.map(u => (
+                  <tr key={u.id}>
+                    <td data-label=""><input type="checkbox" className="checkbox" checked={!!selected[u.id]} onChange={()=>toggle(u.id)} /></td>
+                    <td data-label="Name">{u.name}</td>
+                    <td data-label="Phone">{maskPhone(u.phone)}</td>
+                    <td data-label="Wallet">{fmtINR(u.wallet)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <button className="btn" style={{marginTop:14}} onClick={bulkCredit}><Icon.Check/> Bulk Approve & Credit</button>
+        </React.Fragment>
+      )}
+
+      <div className="section-head"><h2>Audit log</h2></div>
+      <div className="card">
+        {state.auditLog.length === 0 && <div className="empty-state">No bulk-credit actions yet.</div>}
+        {state.auditLog.map(a => <div key={a.id} className="audit-item"><Icon.Check style={{width:14,height:14,marginTop:2,color:"var(--green)",flexShrink:0}}/><span><b>{a.at}</b> — {a.text}</span></div>)}
+      </div>
+    </div>
+  );
+}
+
+/* ============================== Manual Wallet Adjustment ============================== */
+// TODO: POST /admin/wallet/adjust { userId, amount, reason }
+function WalletAdjustPage({ state, setState, toast }) {
+  const [query, setQuery] = useState("");
+  const [userId, setUserId] = useState("");
+  const [amount, setAmount] = useState("");
+  const [reason, setReason] = useState("");
+  const results = query ? state.users.filter(u => u.name.toLowerCase().includes(query.toLowerCase()) || u.phone.includes(query)) : state.users;
+  const selected = state.users.find(u=>u.id===userId);
+
+  const submit = () => {
+    if (!selected) { toast("Select a user first."); return; }
+    const amt = Number(amount);
+    if (!amt) { toast("Enter a non-zero amount."); return; }
+    setState(prev => ({
+      ...prev,
+      users: prev.users.map(u => u.id===userId ? { ...u, wallet: u.wallet + amt } : u),
+      conversions: [{ id: uid("c"), userPhone: selected.phone, offerId: "manual-adjustment", date: nowStr(), mode: "manual", amount: amt, status: amt>=0?"Credited":"Debited" }, ...prev.conversions],
+      auditLog: [{ id: uid("a"), text: `Manually ${amt>=0?"credited":"debited"} ${fmtINR(Math.abs(amt))} ${amt>=0?"to":"from"} ${selected.name} (${maskPhone(selected.phone)}). Reason: ${reason || "—"}`, at: nowStr() }, ...prev.auditLog],
+    }));
+    toast(`Wallet ${amt>=0?"credited":"debited"} for ${selected.name}.`);
+    setAmount(""); setReason("");
+  };
+
+  return (
+    <div>
+      <h1 className="page-title serif">Manual Wallet Adjustment</h1>
+      <p className="page-sub">One-off corrections outside the CRM bulk-credit flow.</p>
+      <div className="card">
+        <div className="field">
+          <label className="field-label">Find user</label>
+          <div className="search-box"><Icon.Search/><input placeholder="Search by name or phone" value={query} onChange={e=>{setQuery(e.target.value); setUserId("");}} /></div>
+        </div>
+        {!userId && query && (
+          <div className="tbl-wrap" style={{marginBottom:14}}>
+            <table className="tbl"><tbody>
+              {results.slice(0,6).map(u => (
+                <tr key={u.id} style={{cursor:"pointer"}} onClick={()=>{setUserId(u.id); setQuery(u.name);}}>
+                  <td data-label="Name">{u.name}</td><td data-label="Phone">{maskPhone(u.phone)}</td><td data-label="Wallet">{fmtINR(u.wallet)}</td>
+                </tr>
+              ))}
+              {results.length===0 && <tr><td><div className="empty-state">No users found.</div></td></tr>}
+            </tbody></table>
+          </div>
+        )}
+        {selected && (
+          <div className="field" style={{background:"var(--panel)", borderRadius:14, padding:"10px 14px", marginBottom:14}}>
+            Selected: <b>{selected.name}</b> · {maskPhone(selected.phone)} · current balance {fmtINR(selected.wallet)}
+          </div>
+        )}
+        <div className="field-row">
+          <div className="field"><label className="field-label">Amount (₹, use − for debit)</label><input className="input" type="number" value={amount} onChange={e=>setAmount(e.target.value)} placeholder="e.g. 100 or -50" /></div>
+          <div className="field"><label className="field-label">Reason (internal note)</label><input className="input" value={reason} onChange={e=>setReason(e.target.value)} placeholder="e.g. goodwill credit" /></div>
+        </div>
+        <button className="btn" onClick={submit}>Apply adjustment</button>
+      </div>
+    </div>
+  );
+}
+
+/* ============================== User Management ============================== */
+// TODO: GET /admin/users, PATCH /admin/users/:id
+function UsersPage({ state, setState, toast }) {
+  const [query, setQuery] = useState("");
+  const [editing, setEditing] = useState(null);
+  const list = state.users.filter(u => !query || u.name.toLowerCase().includes(query.toLowerCase()) || u.phone.includes(query));
+
+  // TODO: POST /admin/users/:id/ban { reason } and POST /admin/users/:id/unban should trigger
+  // the real transactional email (e.g. via SendGrid/Resend) to the user's registered email —
+  // this demo only logs the email content to the audit trail since there's no backend yet.
+  const save = (f, prevUser) => {
+    setState(prev => {
+      const users = prev.users.map(u => u.id===f.id ? f : u);
+      let auditLog = prev.auditLog;
+      const justBanned = f.banned && !prevUser.banned;
+      const justUnbanned = !f.banned && prevUser.banned;
+      if (justBanned) {
+        auditLog = [{ id: uid("a"), text: `Banned ${f.name} (${maskPhone(f.phone)}). Reason: ${f.banReason || "—"}. Email sent asking them to contact support.`, at: nowStr() }, ...auditLog];
+      } else if (justUnbanned) {
+        auditLog = [{ id: uid("a"), text: `Unbanned ${f.name} (${maskPhone(f.phone)}). Simulated reinstatement email queued.`, at: nowStr() }, ...auditLog];
+      }
+      return { ...prev, users, auditLog };
+    });
+    if (f.banned && !prevUser.banned) toast(`User banned — notification email queued to ${f.name}.`);
+    else if (!f.banned && prevUser.banned) toast(`User unbanned — reinstatement email queued.`);
+    else toast("User updated.");
+    setEditing(null);
+  };
+
+  return (
+    <div>
+      <h1 className="page-title serif">User Management</h1>
+      <p className="page-sub">Users edit their own name and phone from the app. Admin can only adjust wallet balance and ban/unban.</p>
+      <div className="toolbar"><div className="search-box"><Icon.Search/><input placeholder="Search by name or phone" value={query} onChange={e=>setQuery(e.target.value)} /></div></div>
+      <div className="tbl-wrap">
+        <table className="tbl">
+          <thead><tr><th>Name</th><th>Phone</th><th>Joined</th><th>Wallet</th><th>Offers done</th><th>Status</th><th></th></tr></thead>
+          <tbody>
+            {list.map(u => (
+              <tr key={u.id}>
+                <td data-label="Name">{u.name}</td>
+                <td data-label="Phone">{maskPhone(u.phone)}</td>
+                <td data-label="Joined">{u.joined}</td>
+                <td data-label="Wallet">{fmtINR(u.wallet)}</td>
+                <td data-label="Offers">{u.offersCompleted}</td>
+                <td data-label="Status"><span className={"badge "+(u.banned?"red":"green")} title={u.banned ? ("Reason: " + (u.banReason || "—")) : ""}>{u.banned?"Banned":"Active"}</span></td>
+                <td data-label="" style={{textAlign:"right"}}><button className="icon-btn" onClick={()=>setEditing(u)}><Icon.Pencil/></button></td>
+              </tr>
+            ))}
+            {list.length===0 && <tr><td colSpan="7"><div className="empty-state">No users found.</div></td></tr>}
+          </tbody>
+        </table>
+      </div>
+      <Modal open={!!editing} onClose={()=>setEditing(null)} title="Edit user">
+        {editing && <UserEditForm user={editing} onSave={(f)=>save(f, editing)} onCancel={()=>setEditing(null)} />}
+      </Modal>
+    </div>
+  );
+}
+// Name and phone are self-managed by the user from the Earnora app and are read-only here.
+// Admin can only adjust wallet balance and ban/unban — no other profile edits.
+function UserEditForm({ user, onSave, onCancel }) {
+  const [wallet, setWallet] = useState(user.wallet);
+  const [banned, setBanned] = useState(!!user.banned);
+  const [reason, setReason] = useState(user.banReason || "");
+  return (
+    <div>
+      <div className="field" style={{background:"var(--panel)", borderRadius:14, padding:"10px 14px"}}>
+        <b>{user.name}</b> · {maskPhone(user.phone)} · joined {user.joined}
+        <p className="field-hint" style={{margin:"4px 0 0"}}>Name and phone are edited by the user themselves in the app.</p>
+      </div>
+      <div className="field"><label className="field-label">Wallet balance (₹)</label><input className="input" type="number" value={wallet} onChange={e=>setWallet(e.target.value)} /></div>
+      <div className="perm-row" style={{padding:"6px 0"}}>
+        <span>{banned ? "User is banned" : "User is active"}</span>
+        <button className={"toggle"+(banned?" on":"")} onClick={()=>setBanned(b=>!b)}></button>
+      </div>
+      {banned && (
+        <div className="field">
+          <label className="field-label">Ban reason (sent to the user by email)</label>
+          <textarea className="textarea" style={{minHeight:80}} value={reason} onChange={e=>setReason(e.target.value)} placeholder="e.g. Multiple accounts detected on the same device" />
+          <p className="field-hint">On save, Earnora will email the user this reason along with instructions to contact support for help.</p>
+        </div>
+      )}
+      <div className="modal-foot"><button className="btn outline" onClick={onCancel}>Cancel</button><button className="btn" onClick={()=>onSave({ ...user, wallet: Number(wallet), banned, banReason: banned ? reason : "" })}>Save</button></div>
+    </div>
+  );
+}
+
+/* ============================== Conversion / Tracking Log ============================== */
+function ConversionsPage({ state }) {
+  const [query, setQuery] = useState("");
+  const [modeFilter, setModeFilter] = useState("all");
+  const list = state.conversions.filter(c => (modeFilter==="all" || c.mode===modeFilter) && (!query || c.userPhone.includes(query) || c.offerId.toLowerCase().includes(query.toLowerCase())));
+  return (
+    <div>
+      <h1 className="page-title serif">Conversion / Tracking Log</h1>
+      <p className="page-sub">Real-time feed of every tracked conversion, across both crediting modes.</p>
+      <div className="toolbar">
+        <div className="search-box"><Icon.Search/><input placeholder="Search by phone or offer" value={query} onChange={e=>setQuery(e.target.value)} /></div>
+        <div className="chip-row">
+          {["all","auto","manual"].map(m => <button key={m} className={"chip"+(modeFilter===m?" on":"")} onClick={()=>setModeFilter(m)}>{m==="all"?"All":m==="auto"?"Auto-Instant":"Manual CRM"}</button>)}
+        </div>
+      </div>
+      <div className="tbl-wrap">
+        <table className="tbl">
+          <thead><tr><th>User</th><th>Offer</th><th>Date &amp; time</th><th>Mode</th><th>Amount</th><th>Status</th></tr></thead>
+          <tbody>
+            {list.map(c => (
+              <tr key={c.id}>
+                <td data-label="User">{maskPhone(c.userPhone)}</td>
+                <td data-label="Offer">{c.offerId}</td>
+                <td data-label="Date">{c.date}</td>
+                <td data-label="Mode"><span className={"badge "+(c.mode==="auto"?"green":"orange")}>{c.mode==="auto"?"Auto-Instant":"Manual CRM"}</span></td>
+                <td data-label="Amount">{fmtINR(c.amount)}</td>
+                <td data-label="Status"><span className={"badge "+(c.status==="Credited"?"green":"red")}>{c.status}</span></td>
+              </tr>
+            ))}
+            {list.length===0 && <tr><td colSpan="6"><div className="empty-state">No matching conversions.</div></td></tr>}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+/* ============================== Withdrawal Management ============================== */
+// TODO: once the payout API (Cashfree/RazorpayX/Decentro) is live, "Approve" here should
+// trigger POST /payouts/transfer and this page should reflect real success/failure webhooks.
+function WithdrawalsPage({ state, setState, toast }) {
+  const [tab, setTab] = useState("pending");
+  const list = state.withdrawals.filter(w => w.status===tab);
+  const setStatus = (id, status) => { setState(prev => ({ ...prev, withdrawals: prev.withdrawals.map(w => w.id===id ? { ...w, status } : w) })); toast(`Withdrawal marked ${status}.`); };
+  return (
+    <div>
+      <h1 className="page-title serif">Withdrawal Management</h1>
+      <p className="page-sub">Requests move from Pending → Approved/Rejected → Paid once the payout API is connected.</p>
+      <div className="chip-row" style={{marginBottom:16}}>
+        {["pending","approved","rejected","paid"].map(t => <button key={t} className={"chip"+(tab===t?" on":"")} onClick={()=>setTab(t)}>{t[0].toUpperCase()+t.slice(1)}</button>)}
+      </div>
+      <div className="tbl-wrap">
+        <table className="tbl">
+          <thead><tr><th>User</th><th>Amount</th><th>Method</th><th>Requested</th><th></th></tr></thead>
+          <tbody>
+            {list.map(w => (
+              <tr key={w.id}>
+                <td data-label="User">{maskPhone(w.userPhone)}</td>
+                <td data-label="Amount">{fmtINR(w.amount)}</td>
+                <td data-label="Method">{w.method}</td>
+                <td data-label="Requested">{w.requestedAt}</td>
+                <td data-label="Actions" style={{display:"flex", gap:6, justifyContent:"flex-end"}}>
+                  {w.status==="pending" && <React.Fragment>
+                    <button className="btn sm" onClick={()=>setStatus(w.id,"approved")}>Approve</button>
+                    <button className="btn sm danger" onClick={()=>setStatus(w.id,"rejected")}>Reject</button>
+                  </React.Fragment>}
+                  {w.status==="approved" && <button className="btn sm" onClick={()=>setStatus(w.id,"paid")}>Mark Paid</button>}
+                </td>
+              </tr>
+            ))}
+            {list.length===0 && <tr><td colSpan="5"><div className="empty-state">No {tab} withdrawals.</div></td></tr>}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+/* ============================== Content Management ============================== */
+// TODO: POST /admin/content { privacy, terms, faqs } — should update the live site instantly, no redeploy.
+function ContentPage({ state, setState, toast }) {
+  const [f, setF] = useState(state.content);
+  const setFaq = (i,k,v) => setF(prev => { const faqs=[...prev.faqs]; faqs[i]={...faqs[i],[k]:v}; return {...prev, faqs}; });
+  const addFaq = () => setF(prev => ({ ...prev, faqs: [...prev.faqs, { q:"", a:"" }] }));
+  const removeFaq = (i) => setF(prev => ({ ...prev, faqs: prev.faqs.filter((_,idx)=>idx!==i) }));
+  const publish = () => { setState(prev => ({ ...prev, content: f })); toast("Content published to the live site."); };
+  return (
+    <div>
+      <h1 className="page-title serif">Content Management</h1>
+      <p className="page-sub">Edit Privacy Policy, Terms and FAQs — publish instantly once the backend is wired, no redeploy needed.</p>
+      <div className="card">
+        <div className="field"><label className="field-label">Privacy Policy</label><textarea className="textarea" style={{minHeight:110}} value={f.privacy} onChange={e=>setF({...f, privacy:e.target.value})} /></div>
+        <div className="field"><label className="field-label">Terms & Conditions</label><textarea className="textarea" style={{minHeight:110}} value={f.terms} onChange={e=>setF({...f, terms:e.target.value})} /></div>
+      </div>
+      <div className="section-head"><h2>FAQs</h2><button className="btn outline sm" onClick={addFaq}><Icon.Plus/> Add FAQ</button></div>
+      {f.faqs.map((item,i) => (
+        <div className="card" key={i}>
+          <div className="field"><label className="field-label">Question</label><input className="input" value={item.q} onChange={e=>setFaq(i,"q",e.target.value)} /></div>
+          <div className="field"><label className="field-label">Answer</label><textarea className="textarea" value={item.a} onChange={e=>setFaq(i,"a",e.target.value)} /></div>
+          <button className="btn danger sm" onClick={()=>removeFaq(i)}><Icon.Trash/> Remove</button>
+        </div>
+      ))}
+      <button className="btn" style={{marginTop:16}} onClick={publish}><Icon.Check/> Publish changes</button>
+    </div>
+  );
+}
+
+/* ============================== Data Export ============================== */
+function toCsv(rows, headers) {
+  const esc = (v) => `"${String(v ?? "").replace(/"/g,'""')}"`;
+  return [headers.join(","), ...rows.map(r => headers.map(h => esc(r[h])).join(","))].join("\n");
+}
+function downloadBlob(content, filename, type) {
+  const blob = new Blob([content], { type });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a"); a.href = url; a.download = filename; document.body.appendChild(a); a.click();
+  document.body.removeChild(a); URL.revokeObjectURL(url);
+}
+function ExportPage({ state, toast }) {
+  const exportCsv = (kind) => {
+    let csv, filename;
+    if (kind === "users") { csv = toCsv(state.users, ["id","name","phone","joined","wallet","offersCompleted"]); filename = "earnora-users.csv"; }
+    else if (kind === "conversions") { csv = toCsv(state.conversions, ["id","userPhone","offerId","date","mode","amount","status"]); filename = "earnora-conversions.csv"; }
+    else { csv = toCsv(state.withdrawals, ["id","userPhone","amount","method","status","requestedAt"]); filename = "earnora-withdrawals.csv"; }
+    downloadBlob(csv, filename, "text/csv");
+    toast("CSV downloaded — opens directly in Excel.");
+  };
+  const exportPdf = (kind) => {
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF();
+    let rows, headers, title;
+    if (kind === "users") { rows = state.users; headers = ["name","phone","joined","wallet","offersCompleted"]; title = "Earnora — Users"; }
+    else if (kind === "conversions") { rows = state.conversions; headers = ["userPhone","offerId","date","mode","amount","status"]; title = "Earnora — Conversion Log"; }
+    else { rows = state.withdrawals; headers = ["userPhone","amount","method","status","requestedAt"]; title = "Earnora — Withdrawals"; }
+    doc.setFontSize(14); doc.text(title, 14, 16);
+    doc.setFontSize(9);
+    let y = 26;
+    doc.text(headers.join("  |  "), 14, y);
+    y += 6;
+    rows.forEach(r => { const line = headers.map(h => String(r[h] ?? "")).join("  |  "); doc.text(line.slice(0,110), 14, y); y += 6; if (y > 280) { doc.addPage(); y = 16; } });
+    doc.save(`earnora-${kind}.pdf`);
+    toast("PDF downloaded.");
+  };
+  const Row = ({ label, kind }) => (
+    <div className="card" style={{display:"flex", alignItems:"center", justifyContent:"space-between", flexWrap:"wrap", gap:10}}>
+      <div>{label}</div>
+      <div style={{display:"flex", gap:8}}>
+        <button className="btn outline sm" onClick={()=>exportCsv(kind)}><Icon.Download/> Excel (CSV)</button>
+        <button className="btn outline sm" onClick={()=>exportPdf(kind)}><Icon.Download/> PDF</button>
+      </div>
+    </div>
+  );
+  return (
+    <div>
+      <h1 className="page-title serif">Data Export</h1>
+      <p className="page-sub">Export platform data as Excel-compatible CSV or PDF.</p>
+      <Row label="User data" kind="users" />
+      <Row label="Conversion / tracking logs" kind="conversions" />
+      <Row label="Withdrawal requests" kind="withdrawals" />
+    </div>
+  );
+}
+
+/* ============================== Sub-admin Roles ============================== */
+// TODO: POST /admin/subadmins — each sub-admin should get their own OTP-based login,
+// scoped server-side to exactly the permissions set here (never trust client-side only).
+function SubadminsPage({ state, setState, toast }) {
+  const [modal, setModal] = useState(null);
+  const save = (f) => {
+    if (!f.name.trim() || f.phone.length !== 10) { toast("Name and a valid 10-digit phone are required."); return; }
+    setState(prev => {
+      const exists = prev.subadmins.some(s=>s.id===f.id);
+      const subadmins = exists ? prev.subadmins.map(s=>s.id===f.id?f:s) : [...prev.subadmins, { ...f, id: uid("sa") }];
+      return { ...prev, subadmins };
+    });
+    toast("Sub-admin saved."); setModal(null);
+  };
+  const remove = (id) => { if (!confirm("Remove this sub-admin?")) return; setState(prev=>({...prev, subadmins: prev.subadmins.filter(s=>s.id!==id)})); };
+  return (
+    <div>
+      <div className="page-title-row"><h1 className="page-title serif">Sub-admin Roles</h1><button className="btn" onClick={()=>setModal({ id:"", name:"", phone:"", perms: Object.fromEntries(MODULES.map(m=>[m.key,false])) })}><Icon.Plus/> Add sub-admin</button></div>
+      <p className="page-sub">Grant each sub-admin exactly the sections they need. Nothing else is visible or editable by them.</p>
+      {state.subadmins.map(s => (
+        <div className="card" key={s.id}>
+          <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:10}}>
+            <div><b>{s.name}</b> · {maskPhone(s.phone)}</div>
+            <div style={{display:"flex", gap:8}}>
+              <button className="btn outline sm" onClick={()=>setModal(s)}><Icon.Pencil/> Edit</button>
+              <button className="btn danger sm" onClick={()=>remove(s.id)}><Icon.Trash/></button>
+            </div>
+          </div>
+          <div className="chip-row" style={{marginTop:10}}>
+            {MODULES.filter(m=>s.perms[m.key]).map(m => <span key={m.key} className="badge green">{m.label}</span>)}
+            {MODULES.every(m=>!s.perms[m.key]) && <span className="badge">No access granted</span>}
+          </div>
+        </div>
+      ))}
+      {state.subadmins.length===0 && <div className="empty-state">No sub-admins yet.</div>}
+      <Modal open={!!modal} onClose={()=>setModal(null)} title={modal?.id ? "Edit sub-admin" : "Add sub-admin"}>
+        {modal && <SubadminForm initial={modal} onSave={save} onCancel={()=>setModal(null)} />}
+      </Modal>
+    </div>
+  );
+}
+function SubadminForm({ initial, onSave, onCancel }) {
+  const [f, setF] = useState(initial);
+  const togglePerm = (k) => setF(prev => ({ ...prev, perms: { ...prev.perms, [k]: !prev.perms[k] } }));
+  const allOn = MODULES.every(m => f.perms[m.key]);
+  const toggleAllPerms = () => setF(prev => ({ ...prev, perms: Object.fromEntries(MODULES.map(m => [m.key, !allOn])) }));
+  return (
+    <div>
+      <div className="field-row">
+        <div className="field"><label className="field-label">Name</label><input className="input" value={f.name} onChange={e=>setF({...f,name:e.target.value})} /></div>
+        <div className="field"><label className="field-label">Phone</label><input className="input" value={f.phone} onChange={e=>setF({...f,phone:e.target.value.replace(/\D/g,"").slice(0,10)})} /></div>
+      </div>
+      <div style={{display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:6}}>
+        <label className="field-label" style={{margin:0}}>Permissions</label>
+        <button type="button" className="btn outline sm" onClick={toggleAllPerms}>{allOn ? "Clear all" : "All permissions"}</button>
+      </div>
+      <div className="card" style={{padding:"4px 16px"}}>
+        {MODULES.map(m => (
+          <div className="perm-row" key={m.key}>{m.label}<button className={"toggle"+(f.perms[m.key]?" on":"")} onClick={()=>togglePerm(m.key)}></button></div>
+        ))}
+      </div>
+      <p className="field-hint">Sub-admins never see or manage Sub-admin Roles — that stays Super Admin only, regardless of permissions granted here.</p>
+      <div className="modal-foot"><button className="btn outline" onClick={onCancel}>Cancel</button><button className="btn" onClick={()=>onSave(f)}>Save</button></div>
+    </div>
+  );
+}
+
+/* ============================== App shell / routing ============================== */
+const ROUTES = [
+  { key: "dashboard", label: "Dashboard", icon: Icon.Grid },
+  { key: "offers", label: "Offer Management", icon: Icon.Gift },
+  { key: "crm", label: "CRM Bulk Credit", icon: Icon.Upload },
+  { key: "wallet", label: "Wallet Adjustment", icon: Icon.Wallet },
+  { key: "users", label: "User Management", icon: Icon.User },
+  { key: "conversions", label: "Conversion Log", icon: Icon.List },
+  { key: "withdrawals", label: "Withdrawals", icon: Icon.CreditOut },
+  { key: "content", label: "Content", icon: Icon.Doc },
+  { key: "export", label: "Data Export", icon: Icon.Download },
+  { key: "subadmins", label: "Sub-admin Roles", icon: Icon.Shield },
+];
+
+function parseHash() { return (location.hash.replace("#/","") || "dashboard"); }
+
+const ADMIN_SESSION_KEY = "earnora_admin_session_v1";
+function loadAdminSession() {
+  try { const raw = localStorage.getItem(ADMIN_SESSION_KEY); if (raw) return JSON.parse(raw); } catch (e) {}
+  return null;
+}
+
+function AdminApp() {
+  const [admin, setAdminRaw] = useState(loadAdminSession());
+  const [route, setRoute] = useState(parseHash());
+  const [sidebarOn, setSidebarOn] = useState(false);
+  const [state, setStateRaw] = useState(loadState());
+  const [toast, toastNode] = useToast();
+
+  // TODO: once the backend is connected, replace this localStorage session with a real
+  // admin token check on load — this only keeps the demo admin logged in across refreshes.
+  const setAdmin = (a) => {
+    setAdminRaw(a);
+    try { if (a) localStorage.setItem(ADMIN_SESSION_KEY, JSON.stringify(a)); else localStorage.removeItem(ADMIN_SESSION_KEY); } catch (e) {}
+  };
+
+  useEffect(() => { const h = () => setRoute(parseHash()); window.addEventListener("hashchange", h); return () => window.removeEventListener("hashchange", h); }, []);
+  useEffect(() => { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch(e) {} }, [state]);
+
+  // Offers now live in Supabase (managed here in the Admin Panel, read by the
+  // consumer app). Fetch the real list once on load, replacing the local seed.
+  useEffect(() => {
+    fetchOffersFromSupabase().then(offers => {
+      if (offers) setStateRaw(prev => ({ ...prev, offers }));
+    });
+  }, []);
+  const setState = (fn) => setStateRaw(fn);
+
+  const go = (key) => { location.hash = "#/" + key; setSidebarOn(false); };
+
+  if (!admin) return <React.Fragment><AdminLogin onLogin={setAdmin} subadmins={state.subadmins} />{toastNode}</React.Fragment>;
+
+  // Dashboard is always visible; Sub-admin Roles is Super Admin only; every other
+  // route requires the matching permission flag on the logged-in admin/sub-admin.
+  const visibleRoutes = ROUTES.filter(r => r.key === "dashboard" || (r.key === "subadmins" ? admin.role === "Super Admin" : admin.perms[r.key]));
+  const current = visibleRoutes.find(r => r.key === route) || visibleRoutes[0];
+  if (route !== current.key) { location.hash = "#/" + current.key; }
+  const pages = {
+    dashboard: <Dashboard state={state} go={go} />,
+    offers: <OffersPage state={state} setState={setState} toast={toast} />,
+    crm: <CrmPage state={state} setState={setState} toast={toast} />,
+    wallet: <WalletAdjustPage state={state} setState={setState} toast={toast} />,
+    users: <UsersPage state={state} setState={setState} toast={toast} />,
+    conversions: <ConversionsPage state={state} />,
+    withdrawals: <WithdrawalsPage state={state} setState={setState} toast={toast} />,
+    content: <ContentPage state={state} setState={setState} toast={toast} />,
+    export: <ExportPage state={state} toast={toast} />,
+    subadmins: <SubadminsPage state={state} setState={setState} toast={toast} />,
+  };
+
+  return (
+    <div className="admin-shell">
+      <div className={"sidebar-backdrop" + (sidebarOn ? " on" : "")} onClick={() => setSidebarOn(false)}></div>
+      <aside className={"sidebar" + (sidebarOn ? " on" : "")}>
+        <div className="sidebar-head">
+          <div className="sidebar-brand serif"><span className="mark-earn">Earn</span><span className="mark-ora">ora</span> <span style={{fontSize:12, color:"var(--ink-soft)", fontFamily:"Satoshi, sans-serif", fontWeight:500}}>Admin</span></div>
+          <button className="icon-btn hamburger sidebar-x" onClick={() => setSidebarOn(false)}><Icon.Close/></button>
+        </div>
+        <nav className="sidebar-nav">
+          <div className="side-group-label">Operations</div>
+          {visibleRoutes.map(r => (
+            <button key={r.key} className={"side-link" + (route===r.key ? " on" : "")} onClick={() => go(r.key)}>
+              <r.icon/> {r.label}
+            </button>
+          ))}
+        </nav>
+        <div className="sidebar-foot">
+          <div className="admin-id">
+            <div className="admin-avatar">{admin.name[0]}</div>
+            <div><span className="admin-name">{admin.name}</span><span className="admin-role">{admin.role} · {maskPhone(admin.phone)}</span></div>
+          </div>
+          <button className="btn outline" style={{width:"100%"}} onClick={() => setAdmin(null)}><Icon.LogOut/> Log out</button>
+        </div>
+      </aside>
+      <div className="main-col">
+        <div className="topbar">
+          <button className="icon-btn hamburger" onClick={() => setSidebarOn(true)}><Icon.Menu/></button>
+          <div className="topbar-title">{current.label}</div>
+        </div>
+        <div className="content">{pages[route]}</div>
+      </div>
+      {toastNode}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<AdminApp />);
+</script>
+</body>
+</html>
