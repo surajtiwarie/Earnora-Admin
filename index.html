@@ -166,6 +166,7 @@ table.tbl tr:hover td { background: #F3F8F4; }
 .badge.sky { background: #E0F5F7; color: #0E7490; }
 .badge.pink { background: #FCE4F0; color: #BE185D; }
 .badge.red { background: #FCE7E7; color: var(--red); }
+.badge.grey { background: #F1F3F1; color: #6B7A6E; }
 /* Category color-coding, same 4-color cycle as the consumer app's offer cards */
 .badge.cat-invest { background: #F1E9FD; color: #6D28D9; }
 .badge.cat-kyc { background: #E0F5F7; color: #0E7490; }
@@ -308,7 +309,7 @@ async function deleteOfferFromSupabase(id) {
 /* ====================== Supabase-backed users & wallet ====================== */
 function rowToAdminUser(r) {
   return {
-    id: r.id, name: r.name || "(no name yet)", phone: r.phone,
+    id: r.id, name: r.name || "(no name yet)", phone: r.phone, email: r.email || "",
     joined: (r.created_at || "").slice(0, 10), wallet: Number(r.wallet_balance) || 0,
     offersCompleted: 0, banned: !!r.banned, banReason: r.ban_reason || "",
   };
@@ -317,6 +318,29 @@ async function fetchUsersFromSupabase() {
   const { data, error } = await sb.from("users").select("*").order("created_at");
   if (error) { console.error("Fetch users failed:", error); return null; }
   return data.map(rowToAdminUser);
+}
+// CRM Bulk Credit needs each user's real per-offer tier progress (not just the
+// generic offer list) — this pulls user_offers rows for one offer at a time.
+async function fetchUserOffersForOffer(categoryId, offerId) {
+  const { data, error } = await sb.from("user_offers").select("*").eq("category_id", categoryId).eq("offer_id", offerId);
+  if (error) { console.error("fetchUserOffersForOffer failed:", error); return []; }
+  return data || [];
+}
+// Manually credits one tier for one user: bumps tier_progress, clears any pending
+// flag for that tier, writes the wallet_transactions row, and updates wallet_balance —
+// all three in the same place so CRM Bulk Credit can never leave one of them stale.
+async function creditManualTierInSupabase(userId, categoryId, offerId, tierIndex, amount, currentBalance, reason) {
+  const newBalance = Math.round((currentBalance + amount) * 100) / 100;
+  const { error: balErr } = await sb.from("users").update({ wallet_balance: newBalance }).eq("id", userId);
+  if (balErr) { console.error("CRM credit balance update failed:", balErr); return { ok: false }; }
+  const { error: txnErr } = await sb.from("wallet_transactions").insert({
+    user_id: userId, amount: Math.abs(amount), type: "credit", reason: reason || "CRM Bulk Credit",
+  });
+  if (txnErr) console.error("CRM credit wallet_transactions insert failed:", txnErr);
+  const { error: progErr } = await sb.from("user_offers")
+    .upsert({ user_id: userId, category_id: categoryId, offer_id: offerId, tier_progress: tierIndex + 1, pending_tier: null }, { onConflict: "user_id,category_id,offer_id" });
+  if (progErr) console.error("CRM tier_progress update failed:", progErr);
+  return { ok: true, newBalance };
 }
 async function adjustUserWalletInSupabase(userId, amount, reason, newBalance) {
   const { error: txnErr } = await sb.from("wallet_transactions").insert({
@@ -526,7 +550,7 @@ function loadState() {
 }
 
 function fmtINR(n) { return "₹" + Number(n || 0).toLocaleString("en-IN", { maximumFractionDigits: 2 }); }
-function maskPhone(p) { return p ? "+91 " + p.slice(0,2) + "•••••" + p.slice(-3) : ""; }
+function maskPhone(p) { return p ? "+91 " + p : ""; }
 function nowStr() { const d = new Date(); return d.toISOString().slice(0,16).replace("T"," "); }
 function uid(prefix) { return prefix + "_" + Math.random().toString(36).slice(2,8); }
 
@@ -1011,81 +1035,127 @@ function OffersPage({ state, setState, toast }) {
 }
 
 /* ============================== CRM Report & Bulk Credit ============================== */
-// TODO: POST /admin/crm/upload { offerId, rows } — persist raw report; POST /admin/crm/bulk-credit { offerId, userIds }
+// Filters real user_offers progress for one offer at a time (e.g. "everyone stuck
+// at Trade, KYC already done") and lets the admin manually credit a per-user amount
+// for that exact tier — for tiers like Trade/Deposit that can't be auto-verified.
 function CrmPage({ state, setState, toast }) {
-  const manualOffers = state.offers.filter(o => o.creditMode === "manual");
-  const [offerId, setOfferId] = useState(manualOffers[0]?.id || "");
-  const [raw, setRaw] = useState("");
-  const [matched, setMatched] = useState([]);
+  const tieredOffers = state.offers.filter(o => (o.tiers || []).length > 0);
+  const [offerId, setOfferId] = useState(tieredOffers[0]?.id || "");
+  const offer = tieredOffers.find(o => o.id === offerId);
+  const [tierFilter, setTierFilter] = useState("0"); // index into offer.tiers, as string
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState({});
+  const [amounts, setAmounts] = useState({});
 
-  const parseReport = () => {
-    const lines = raw.split("\n").map(l=>l.trim()).filter(Boolean);
-    const rows = lines.map(l => l.split(",")[0].replace(/\D/g,"").slice(-10));
-    const found = state.users.filter(u => rows.includes(u.phone));
-    setMatched(found);
-    const sel = {}; found.forEach(u => sel[u.id] = true); setSelected(sel);
-    if (found.length === 0) toast("No matching users found for the pasted numbers.");
-  };
-  const toggle = (id) => setSelected(prev => ({ ...prev, [id]: !prev[id] }));
-  const toggleAll = () => { const allOn = matched.every(u=>selected[u.id]); const sel={}; matched.forEach(u=>sel[u.id]=!allOn); setSelected(sel); };
-
-  const bulkCredit = () => {
-    const offer = state.offers.find(o=>o.id===offerId);
-    if (!offer) return;
-    const targets = matched.filter(u => selected[u.id]);
-    if (targets.length === 0) { toast("Select at least one user."); return; }
-    setState(prev => {
-      const users = prev.users.map(u => targets.some(t=>t.id===u.id) ? { ...u, wallet: u.wallet + Number(offer.reward), offersCompleted: u.offersCompleted+1 } : u);
-      const conversions = [
-        ...targets.map(t => ({ id: uid("c"), userPhone: t.phone, offerId: offer.id, date: nowStr(), mode: "manual", amount: offer.reward, status: "Credited" })),
-        ...prev.conversions,
-      ];
-      const auditLog = [{ id: uid("a"), text: `Bulk-credited ${targets.length} user(s) ${fmtINR(offer.reward)} each for "${offer.name}" — total ${fmtINR(offer.reward*targets.length)}.`, at: nowStr() }, ...prev.auditLog];
-      return { ...prev, users, conversions, auditLog };
+  const loadRows = () => {
+    if (!offer) { setRows([]); return; }
+    setLoading(true);
+    fetchUserOffersForOffer(offer.category, offer.id).then(userOffers => {
+      const byUserId = {}; state.users.forEach(u => byUserId[u.id] = u);
+      const joined = userOffers
+        .map(uo => ({ uo, user: byUserId[uo.user_id] }))
+        .filter(r => r.user); // drop rows we can't match to a known user
+      setRows(joined);
+      setLoading(false);
     });
-    toast(`Credited ${targets.length} user(s) for ${offer.name}.`);
-    setMatched([]); setSelected({}); setRaw("");
+  };
+  useEffect(loadRows, [offerId, state.users]);
+
+  const tierIdx = Number(tierFilter);
+  const visible = rows.filter(({ uo }) => {
+    if (tierFilter === "all") return true;
+    const progress = uo.tier_progress || 0;
+    const pending = uo.pending_tier;
+    // "Stuck at this tier" = haven't completed it yet, and either it's next up
+    // or they've submitted it for verification (pending).
+    return progress === tierIdx || pending === tierIdx;
+  });
+
+  const toggle = (id) => setSelected(prev => ({ ...prev, [id]: !prev[id] }));
+  const toggleAll = () => { const allOn = visible.every(r => selected[r.user.id]); const sel = {}; visible.forEach(r => sel[r.user.id] = !allOn); setSelected(sel); };
+  const setAmount = (id, v) => setAmounts(prev => ({ ...prev, [id]: v }));
+
+  const bulkCredit = async () => {
+    if (tierFilter === "all") { toast("Pick a specific tier to credit — not \"All\"."); return; }
+    const targets = visible.filter(r => selected[r.user.id] && Number(amounts[r.user.id]) > 0);
+    if (targets.length === 0) { toast("Select users and enter an amount for each."); return; }
+    let done = 0;
+    for (const r of targets) {
+      const amt = Number(amounts[r.user.id]);
+      const res = await creditManualTierInSupabase(
+        r.user.id, offer.category, offer.id, tierIdx, amt, r.user.wallet,
+        `${offer.name} — ${offer.tiers[tierIdx]?.label || "Tier " + (tierIdx + 1)} (manual CRM credit)`
+      );
+      if (res.ok) done++;
+    }
+    setState(prev => ({
+      ...prev,
+      auditLog: [{ id: uid("a"), text: `CRM Bulk Credit: ${done} user(s) credited for "${offer.name} — ${offer.tiers[tierIdx]?.label}".`, at: nowStr() }, ...prev.auditLog],
+    }));
+    toast(`Credited ${done} of ${targets.length} user(s).`);
+    setSelected({}); setAmounts({});
+    fetchUsersFromSupabase().then(users => { if (users) setState(prev => ({ ...prev, users })); });
+    loadRows();
+  };
+
+  const tierBadge = (uo, i) => {
+    const done = (uo.tier_progress || 0) > i;
+    const isPending = uo.pending_tier === i;
+    const label = offer.tiers[i]?.label || ("Tier " + (i + 1));
+    const cls = done ? "green" : isPending ? "orange" : "grey";
+    const mark = done ? "✅" : isPending ? "⏳" : "—";
+    return <span key={i} className={"badge " + cls} style={{ marginRight: 4 }} title={label}>{mark} {label}</span>;
   };
 
   return (
     <div>
-      <h1 className="page-title serif">CRM Report & Bulk Credit</h1>
-      <p className="page-sub">For Manual CRM-Bulk offers only — paste a CRM export (one phone number per line, CSV rows also work), match it to Earnora users, then approve and credit in one action.</p>
+      <h1 className="page-title serif">CRM Bulk Credit</h1>
+      <p className="page-sub">Filter users stuck at a specific tier (e.g. KYC done, Trade pending) and manually credit a per-user amount — for tiers that can't be auto-verified from a partner webhook.</p>
       <div className="card">
         <div className="field">
-          <label className="field-label">Offer (Manual CRM-Bulk only)</label>
-          <select className="select" value={offerId} onChange={e=>setOfferId(e.target.value)}>
-            {manualOffers.map(o => <option key={o.id} value={o.id}>{o.name} — {fmtINR(o.reward)}</option>)}
+          <label className="field-label">Offer</label>
+          <select className="select" value={offerId} onChange={e => { setOfferId(e.target.value); setTierFilter("0"); setSelected({}); setAmounts({}); }}>
+            {tieredOffers.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
           </select>
-          {manualOffers.length === 0 && <p className="field-hint">No offers are set to Manual CRM-Bulk yet — set one in Offer Management first.</p>}
+          {tieredOffers.length === 0 && <p className="field-hint">No offers with reward tiers yet — add tiers in Offer Management first.</p>}
         </div>
-        <div className="field">
-          <label className="field-label">Paste CRM report (phone per line, or phone,status,amount CSV)</label>
-          <textarea className="textarea" style={{minHeight:120}} value={raw} onChange={e=>setRaw(e.target.value)} placeholder={"9876500041\n9123400229,KYC Success,240"} />
-        </div>
-        <button className="btn" onClick={parseReport} disabled={!offerId || !raw.trim()}><Icon.Upload/> Match users</button>
+        {offer && (
+          <div className="field">
+            <label className="field-label">Show users stuck at</label>
+            <select className="select" value={tierFilter} onChange={e => { setTierFilter(e.target.value); setSelected({}); setAmounts({}); }}>
+              {offer.tiers.map((t, i) => <option key={i} value={i}>{t.label} (pending)</option>)}
+              <option value="all">All users on this offer</option>
+            </select>
+          </div>
+        )}
       </div>
 
-      {matched.length > 0 && (
+      {loading && <p className="page-sub">Loading…</p>}
+
+      {!loading && offer && (
         <React.Fragment>
-          <div className="section-head"><h2>Matched users ({matched.length})</h2><button className="btn outline sm" onClick={toggleAll}>Select all / none</button></div>
+          <div className="section-head"><h2>Matched users ({visible.length})</h2><button className="btn outline sm" onClick={toggleAll}>Select all / none</button></div>
           <div className="tbl-wrap">
             <table className="tbl">
-              <thead><tr><th></th><th>Name</th><th>Phone</th><th>Current wallet</th></tr></thead>
+              <thead><tr><th></th><th>Name</th><th>Phone</th><th>Email</th><th>Progress</th><th>Wallet</th><th>Credit ₹</th></tr></thead>
               <tbody>
-                {matched.map(u => (
-                  <tr key={u.id}>
-                    <td data-label=""><input type="checkbox" className="checkbox" checked={!!selected[u.id]} onChange={()=>toggle(u.id)} /></td>
-                    <td data-label="Name">{u.name}</td>
-                    <td data-label="Phone">{maskPhone(u.phone)}</td>
-                    <td data-label="Wallet">{fmtINR(u.wallet)}</td>
+                {visible.map(({ uo, user }) => (
+                  <tr key={user.id}>
+                    <td data-label=""><input type="checkbox" className="checkbox" checked={!!selected[user.id]} onChange={() => toggle(user.id)} /></td>
+                    <td data-label="Name">{user.name}</td>
+                    <td data-label="Phone">{maskPhone(user.phone)}</td>
+                    <td data-label="Email">{user.email || "—"}</td>
+                    <td data-label="Progress">{offer.tiers.map((_, i) => tierBadge(uo, i))}</td>
+                    <td data-label="Wallet">{fmtINR(user.wallet)}</td>
+                    <td data-label="Credit ₹"><input className="input sm" style={{ width: 80 }} type="number" min="0" placeholder="0" value={amounts[user.id] || ""} onChange={e => setAmount(user.id, e.target.value)} /></td>
                   </tr>
                 ))}
+                {visible.length === 0 && <tr><td colSpan="7"><div className="empty-state">No users match this filter.</div></td></tr>}
               </tbody>
             </table>
           </div>
-          <button className="btn" style={{marginTop:14}} onClick={bulkCredit}><Icon.Check/> Bulk Approve & Credit</button>
+          <button className="btn" style={{ marginTop: 14 }} onClick={bulkCredit}><Icon.Check/> Credit Selected</button>
         </React.Fragment>
       )}
 
