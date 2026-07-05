@@ -354,6 +354,8 @@ function rowToWithdrawal(r) {
     amount: Number(r.amount) || 0, method: methodLabel,
     status: r.status || "pending", requestedAt: fmtAdminDate(r.created_at),
     rejectionReason: r.rejection_reason || "",
+    isSuspicious: !!r.is_suspicious, suspiciousReason: r.suspicious_reason || "",
+    autoApproved: !!r.auto_approved,
   };
 }
 // FIX: this used to try a Supabase embedded join (`select("*, users(phone)")`), which
@@ -1316,6 +1318,22 @@ function WithdrawalsPage({ state, setState, toast, loadError }) {
     toast(`Withdrawal marked ${status}.`);
     updateWithdrawalStatusInSupabase(id, status, rejectionReason);
   };
+  // Reject with a choice: give the money back to the user's wallet, or keep it
+  // deducted (for confirmed fraud/abuse cases where no refund should happen).
+  const rejectWithdrawal = async (w) => {
+    const reason = prompt("Reject reason (user ko dikhega)") || "";
+    const refund = confirm(
+      "OK = Refund ₹" + w.amount + " back to the user's wallet.\nCancel = Reject permanently (no refund, amount stays deducted)."
+    );
+    setStatus(w.id, "rejected", reason);
+    if (refund) {
+      const { data: userRow } = await sb.from("users").select("wallet_balance").eq("id", w.userId).single();
+      const current = (userRow && Number(userRow.wallet_balance)) || 0;
+      const newBalance = Math.round((current + w.amount) * 100) / 100;
+      await adjustUserWalletInSupabase(w.userId, w.amount, "Withdrawal rejected — refunded", newBalance);
+      toast("₹" + w.amount + " refunded to user's wallet.");
+    }
+  };
   return (
     <div>
       <h1 className="page-title serif">Withdrawal Management</h1>
@@ -1335,18 +1353,14 @@ function WithdrawalsPage({ state, setState, toast, loadError }) {
           <tbody>
             {list.map(w => (
               <tr key={w.id}>
-                <td data-label="User">{maskPhone(w.userPhone)}</td>
-                <td data-label="Amount">{fmtINR(w.amount)}</td>
+                <td data-label="User">{maskPhone(w.userPhone)}{w.isSuspicious && <><br /><span className="badge red" title={w.suspiciousReason}>⚠️ Suspicious</span></>}</td>
+                <td data-label="Amount">{fmtINR(w.amount)}{w.autoApproved && <><br /><span className="badge green">Auto</span></>}</td>
                 <td data-label="Method">{w.method}</td>
                 <td data-label="Requested">{w.requestedAt}{w.status === "rejected" && w.rejectionReason && <><br /><span style={{ color: "#B91C1C", fontSize: 12 }}>Reason: {w.rejectionReason}</span></>}</td>
                 <td data-label="Actions" style={{display:"flex", gap:6, justifyContent:"flex-end"}}>
                   {w.status==="pending" && <React.Fragment>
                     <button className="btn sm" onClick={()=>setStatus(w.id,"approved")}>Approve</button>
-                    <button className="btn sm danger" onClick={()=>{
-                      const reason = window.prompt("Reject reason (user ko dikhega):");
-                      if (reason === null) return;
-                      setStatus(w.id, "rejected", reason.trim());
-                    }}>Reject</button>
+                    <button className="btn sm danger" onClick={()=>rejectWithdrawal(w)}>Reject</button>
                   </React.Fragment>}
                   {w.status==="approved" && <button className="btn sm" onClick={()=>setStatus(w.id,"paid")}>Mark Paid</button>}
                 </td>
