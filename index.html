@@ -353,6 +353,16 @@ async function fetchTierProofsForOffer(categoryId, offerId, tierIndex) {
   (data || []).forEach(r => { map[r.user_id] = r; });
   return map;
 }
+// Rejects a submitted proof with a reason the user sees in-app, and clears the
+// images so they have to submit a fresh set rather than silently reusing the
+// rejected screenshots.
+async function rejectTierProof(userId, categoryId, offerId, tierIndex, reason) {
+  const { error } = await sb.from("tier_proofs")
+    .update({ rejected: true, reject_reason: reason || "Not accepted — please try again." })
+    .eq("user_id", userId).eq("category_id", categoryId).eq("offer_id", offerId).eq("tier_index", tierIndex);
+  if (error) { console.error("rejectTierProof failed:", error); return { ok: false }; }
+  return { ok: true };
+}
 // Everything needed for the fraud cross-check detail page: the click record
 // (click_id, IP, tier, postback status) plus every wallet transaction tied to
 // this user so far — admin reads the reason text to tell auto vs manual credits
@@ -1204,6 +1214,8 @@ function CrmPage({ state, setState, toast, admin }) {
   const [amounts, setAmounts] = useState({});
   const [proofs, setProofs] = useState({});
   const [auditFor, setAuditFor] = useState(null); // { user, offer } or null
+  const [rejectModalOpen, setRejectModalOpen] = useState(false);
+  const [rejectReason, setRejectReason] = useState("");
 
   const loadRows = () => {
     if (!offer) { setRows([]); return; }
@@ -1277,6 +1289,29 @@ function CrmPage({ state, setState, toast, admin }) {
 
   const currentTierRequiresProof = offer && tierFilter !== "all" && offer.tiers[tierIdx] && offer.tiers[tierIdx].requireProof;
 
+  const openRejectModal = () => {
+    const targets = visible.filter(r => selected[r.user.id]);
+    if (targets.length === 0) { toast("Select users to reject."); return; }
+    setRejectReason("");
+    setRejectModalOpen(true);
+  };
+  const confirmReject = async () => {
+    const targets = visible.filter(r => selected[r.user.id]);
+    let done = 0;
+    for (const r of targets) {
+      const res = await rejectTierProof(r.user.id, offer.category, offer.id, tierIdx, rejectReason);
+      if (res.ok) done++;
+    }
+    setState(prev => ({
+      ...prev,
+      auditLog: [{ id: uid("a"), text: `CRM Reject: ${admin?.name || "admin"} rejected ${done} user(s) proof for "${offer.name} — ${offer.tiers[tierIdx]?.label}". Reason: ${rejectReason || "none given"}`, at: nowStr() }, ...prev.auditLog],
+    }));
+    toast(`Rejected ${done} of ${targets.length} user(s) — they'll see the reason in-app.`);
+    setSelected({});
+    setRejectModalOpen(false);
+    fetchTierProofsForOffer(offer.category, offer.id, tierIdx).then(setProofs);
+  };
+
   return (
     <div>
       <h1 className="page-title serif">CRM Bulk Credit</h1>
@@ -1318,12 +1353,14 @@ function CrmPage({ state, setState, toast, admin }) {
                     <td data-label="Progress">{offer.tiers.map((_, i) => tierBadge(uo, i))}</td>
                     {currentTierRequiresProof && (
                       <td data-label="Proof">
-                        {(proofs[user.id] && proofs[user.id].images && proofs[user.id].images.length)
+                        {(proofs[user.id] && proofs[user.id].images && proofs[user.id].images.length && !proofs[user.id].rejected)
                           ? <span style={{display:"flex", alignItems:"center", gap:6, cursor:"pointer"}}
                               onClick={() => { const w = window.open(); if (w) w.document.write(proofs[user.id].images.map(src => '<img src="'+src+'" style="max-width:100%;display:block;margin-bottom:12px">').join('')); }}>
                               <img src={proofs[user.id].images[0]} alt="Proof" style={{ width: 40, height: 40, objectFit: "cover", borderRadius: 6, border: "1px solid var(--line)" }} />
                               <span className={"badge " + (proofs[user.id].images.length >= (offer.tiers[tierIdx].proofCount||1) ? "green" : "orange")}>{proofs[user.id].images.length}/{offer.tiers[tierIdx].proofCount||1}</span>
                             </span>
+                          : (proofs[user.id] && proofs[user.id].rejected)
+                          ? <span className="badge orange" title={proofs[user.id].reject_reason}>🚫 Rejected</span>
                           : <span className="badge orange">No proof yet</span>}
                       </td>
                     )}
@@ -1336,8 +1373,24 @@ function CrmPage({ state, setState, toast, admin }) {
               </tbody>
             </table>
           </div>
-          <button className="btn" style={{ marginTop: 14 }} onClick={bulkCredit}><Icon.Check/> Credit Selected</button>
+          <div style={{display:"flex", gap:10, marginTop:14}}>
+            <button className="btn" onClick={bulkCredit}><Icon.Check/> Credit Selected</button>
+            {currentTierRequiresProof && <button className="btn outline" onClick={openRejectModal}>🚫 Reject Selected</button>}
+          </div>
         </React.Fragment>
+      )}
+
+      {rejectModalOpen && (
+        <Modal open={true} onClose={() => setRejectModalOpen(false)} title="Reject proof">
+          <div className="field">
+            <label className="field-label">Reason (the user will see this in-app)</label>
+            <textarea className="textarea" value={rejectReason} onChange={e => setRejectReason(e.target.value)} placeholder="e.g. Screenshot doesn't show the deposit amount clearly — please upload the payment confirmation page." />
+          </div>
+          <div className="modal-foot">
+            <button className="btn outline" onClick={() => setRejectModalOpen(false)}>Cancel</button>
+            <button className="btn" onClick={confirmReject}>Reject & notify</button>
+          </div>
+        </Modal>
       )}
 
       {auditFor && <OfferAuditDetail user={auditFor.user} offer={auditFor.offer} onClose={() => setAuditFor(null)} toast={toast} />}
